@@ -1,12 +1,12 @@
 // Service worker: keeps the app's own files on the phone so it opens with no signal.
-const CACHE = 'sfm-receipts-v2';
+const CACHE = 'sfm-receipts-v3';
 const FILES = [
   './', 'index.html', 'styles.css', 'app.js', 'config.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'
 ];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES.map(f => new Request(f, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {
@@ -25,7 +25,7 @@ self.addEventListener('fetch', e => {
     // Settings file: try the network first (3 seconds), fall back to the phone's copy.
     e.respondWith(
       Promise.race([
-        fetch(e.request).then(resp => {
+        fetch(e.request, { cache: 'no-cache' }).then(resp => {
           if (resp && resp.ok) caches.open(CACHE).then(c => c.put(e.request, resp.clone()));
           return resp;
         }),
@@ -37,7 +37,7 @@ self.addEventListener('fetch', e => {
   e.respondWith(
     caches.open(CACHE).then(cache =>
       cache.match(e.request, { ignoreSearch: true }).then(cached => {
-        const fresh = fetch(e.request).then(resp => {
+        const fresh = fetch(e.request, { cache: 'no-cache' }).then(resp => {
           if (resp && resp.ok) cache.put(e.request, resp.clone());
           return resp;
         }).catch(() => cached);
