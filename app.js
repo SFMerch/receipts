@@ -348,9 +348,10 @@
     }
     cur.ai[kind] = r.fields;
     fields.forEach(k => {
-      const v = r.fields[k];
+      const raw = r.fields[k];
+      const v = raw == null ? null : Number(String(raw).replace(/[$,\s]/g, ''));
       const f = cur.fields[k];
-      if (v == null || v === '' || isNaN(Number(v))) {
+      if (v == null || raw === '' || isNaN(v)) {
         f.state = 'manual'; f.note = "Couldn't read this clearly.  Please type it in.";
       } else {
         f.ai = Number(v); f.state = 'ai';
