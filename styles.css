@@ -85,3 +85,29 @@ select {
 .split-left.off { color: #8a2a1f; }
 .split-left.good { color: #1f7a4d; }
 button.change { background: none; color: #2e6b30; width: auto; padding: 0; margin: 10px 0 0; font-size: 15px; font-weight: 600; text-decoration: underline; }
+/* ---------- SFM Management (desktop) ---------- */
+body.wide main { max-width: 1150px; }
+.mgmt-nav { margin-top: 26px; border-top: 1px solid #dfe5dc; padding-top: 14px; }
+.mgmt-title { font-weight: 700; color: #2e6b30; margin-bottom: 2px; }
+.mgmt-nav button { margin-top: 10px; padding: 13px; }
+.topline { display: flex; justify-content: space-between; align-items: baseline; }
+.topline .change { margin: 0; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 10px 0 14px; }
+.toolbar input, .toolbar select { width: auto; font-size: 15px; padding: 9px 10px; }
+.toolbar input[type=file] { border: 0; padding: 0; }
+.inl { display: inline-flex; gap: 6px; align-items: center; font-weight: 400; margin: 0; font-size: 15px; }
+button.small { width: auto; margin: 0; padding: 9px 16px; font-size: 15px; }
+details.person { background: #fff; border-radius: 10px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+details.person summary { cursor: pointer; padding: 12px 14px; font-weight: 700; }
+.badge { display: inline-block; border-radius: 10px; padding: 1px 8px; font-size: 13px; font-weight: 700; margin-left: 6px; }
+.badge.red { background: #fbe1de; color: #8a2a1f; }
+.badge.yellow { background: #fff1c2; color: #7a5b00; }
+table.grid { width: 100%; border-collapse: collapse; font-size: 14px; }
+table.grid th { text-align: left; color: #5b6776; font-weight: 600; border-bottom: 1px solid #e3e8ef; padding: 6px 8px; }
+table.grid td { border-bottom: 1px solid #eef1f4; padding: 7px 8px; vertical-align: top; }
+table.grid td.num { text-align: right; white-space: nowrap; }
+table.grid tr.red td:first-child { border-left: 4px solid #d9534f; }
+table.grid tr.yellow td:first-child { border-left: 4px solid #e8b100; }
+table.grid a { color: #2e6b30; font-weight: 600; margin-right: 8px; }
+table.grid .sub2 { color: #5b6776; font-size: 13px; }
+.results { background: #fff; border-radius: 10px; padding: 6px; box-shadow: 0 1px 3px rgba(0,0,0,.06); overflow-x: auto; }

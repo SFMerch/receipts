@@ -126,6 +126,7 @@
   function show(id) {
     document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
     $(id).classList.remove('hidden');
+    document.body.classList.toggle('wide', $(id).classList.contains('wide'));
     window.scrollTo(0, 0);
   }
 
@@ -147,6 +148,7 @@
     $('sessionInfo').textContent = 'Signed in until ' + new Date(s.expires).toLocaleDateString();
     showInstallTip();
     updateQueueInfo();
+    $('mgmtNav').classList.toggle('hidden', !isMgmt(s));
     show('screenHome');
   }
 
@@ -727,6 +729,176 @@
     pur = null;
   }
 
+
+  /* =========================================================
+   * SFM Management (desktop): Open Items, search, statement import
+   * ========================================================= */
+  function isMgmt(s) { return s && s.user && (s.user.role === 'Owner' || s.user.role === 'Accountant'); }
+
+  function money(v) { return v == null || v === '' ? '' : (Number(v) < 0 ? '-$' : '$') + Math.abs(Number(v)).toFixed(2); }
+  function usDate(d) { const m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[2] + '/' + m[3] + '/' + m[1] : (d || ''); }
+  function links(r) {
+    return (r.receiptPhoto ? '<a href="' + esc(r.receiptPhoto) + '" target="_blank" rel="noopener">Receipt</a>' : '') +
+           (r.odometerPhoto ? '<a href="' + esc(r.odometerPhoto) + '" target="_blank" rel="noopener">Odometer</a>' : '');
+  }
+
+  async function mgmtCall(action, data, msgEl) {
+    const s = loadSession();
+    if (!s) { showLogin(); return null; }
+    if (!navigator.onLine) { if (msgEl) msgEl.textContent = 'No service.  These screens need a connection.'; return null; }
+    try {
+      const r = await api(action, Object.assign({ token: s.token }, data || {}), 120000);
+      if (r.error === 'LOGGED_OUT') { clearSession(); showLogin('Please sign in again.'); return null; }
+      if (!r.ok && msgEl) msgEl.textContent = r.error || 'Something went wrong.';
+      return r.ok ? r : null;
+    } catch (e) {
+      if (msgEl) msgEl.textContent = 'Could not reach the server.  Try again.';
+      return null;
+    }
+  }
+
+  /* ----- Open Items ----- */
+  let openData = [];
+
+  async function loadOpenItems() {
+    show('screenOpen');
+    $('openSummary').textContent = 'Loading…';
+    $('openList').innerHTML = '';
+    const r = await mgmtCall('openItems', {}, $('openSummary'));
+    if (!r) return;
+    openData = r.items;
+    renderOpenItems();
+  }
+
+  function renderOpenItems() {
+    const f = $('openFilter').value, who = $('openWho').value.trim().toLowerCase();
+    const items = openData.filter(i => (!f || i.color === f) && (!who || i.cardholder.toLowerCase().indexOf(who) === 0));
+    const red = openData.filter(i => i.color === 'red').length, yel = openData.length - red;
+    $('openSummary').textContent = red + ' missing (red), ' + yel + ' late (yellow).  Items drop off once complete.';
+    const groups = {};
+    items.forEach(i => (groups[i.cardholder] = groups[i.cardholder] || []).push(i));
+    $('openList').innerHTML = Object.keys(groups).sort().map(name => {
+      const g = groups[name];
+      const r = g.filter(i => i.color === 'red').length, y = g.length - r;
+      return '<details class="person"' + (Object.keys(groups).length === 1 ? ' open' : '') + '><summary>' + esc(name) +
+        (r ? '<span class="badge red">' + r + ' red</span>' : '') + (y ? '<span class="badge yellow">' + y + ' yellow</span>' : '') +
+        '</summary><div class="results"><table class="grid"><tr><th>Date</th><th>Merchant</th><th class="num">Amount</th><th>What\'s missing</th><th>Receipt</th><th></th></tr>' +
+        g.map(i => '<tr class="' + i.color + '"><td>' + usDate(i.date) + '</td><td>' + esc(i.merchant) +
+          (i.category ? '<div class="sub2">' + esc(i.category) + (i.note ? ' · ' + esc(i.note) : '') + '</div>' : '') +
+          '</td><td class="num">' + money(i.amount) + '</td><td>' + esc(i.issue) + '</td><td>' + links(i) + '</td><td>' +
+          (i.color === 'yellow' && i.chargeId ? '<button class="change" data-review="' + esc(i.chargeId) + '">Mark OK</button>' : '') +
+          '</td></tr>').join('') + '</table></div></details>';
+    }).join('') || '<p class="sub">Nothing open.  Everything is complete.</p>';
+  }
+
+  async function markReviewed(id, btn) {
+    btn.textContent = 'Saving…';
+    const r = await mgmtCall('markReviewed', { chargeId: id });
+    if (r) { openData = openData.filter(i => i.chargeId !== id); renderOpenItems(); }
+    else btn.textContent = 'Mark OK';
+  }
+
+  /* ----- Find a Receipt ----- */
+  async function doSearch() {
+    const q = { amount: $('sAmount').value.replace(/[$,\s]/g, ''), text: $('sText').value.trim(),
+                cardholder: $('sWho').value.trim(), from: $('sFrom').value, to: $('sTo').value };
+    if (!q.amount && !q.text && !q.cardholder && !q.from && !q.to) { $('searchMsg').textContent = 'Enter at least one thing to search for.'; return; }
+    $('searchMsg').textContent = 'Searching…';
+    $('searchResults').innerHTML = '';
+    const r = await mgmtCall('search', { query: q }, $('searchMsg'));
+    if (!r) return;
+    $('searchMsg').textContent = r.results.length + ' found' + (r.more ? ' (showing the first 300)' : '') + '.';
+    if (!r.results.length) return;
+    $('searchResults').innerHTML = '<div class="results"><table class="grid"><tr><th>Date</th><th>Cardholder</th><th>Store / merchant</th><th class="num">Amount</th><th>Category · QuickBooks account</th><th>Status</th><th>Photos</th></tr>' +
+      r.results.map(x => {
+        const parts = (x.parts || []).map(p => '<div class="sub2">' + esc(p.note || ('Part ' + p.n)) + ': ' + money(p.amount) +
+          (p.gallons ? ', ' + p.gallons + ' gal' : '') + ' · ' + esc(p.category) + (p.account ? ' · ' + esc(p.account) : '') + '</div>').join('');
+        const extra = x.kind === 'receipt'
+          ? (x.gallons ? '<div class="sub2">' + x.gallons + ' gal' + (x.odometer ? ' · odometer ' + Number(x.odometer).toLocaleString() : '') + '</div>' : '') +
+            (x.note ? '<div class="sub2">Note: ' + esc(x.note) + '</div>' : '')
+          : '';
+        return '<tr class="' + (x.kind === 'charge' && x.status === 'Missing receipt' ? 'red' : '') + '"><td>' + usDate(x.date) + '</td><td>' + esc(x.cardholder) +
+          '</td><td>' + esc(x.merchant || '') + extra + '</td><td class="num">' + money(x.total) + '</td><td>' + esc(x.category || '') +
+          (x.account ? '<div class="sub2">' + esc(x.account) + '</div>' : '') + parts + '</td><td>' +
+          esc(x.kind === 'charge' ? x.status : (x.status === 'OK' ? (x.charges && x.charges.length ? 'Matched' : 'Waiting for statement') : x.status)) +
+          '</td><td>' + links(x) + '</td></tr>';
+      }).join('') + '</table></div>';
+  }
+
+  /* ----- Import ----- */
+  let importRows = null;
+
+  function parseCSV(text) {
+    const rows = []; let row = [], field = '', q = false;
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (q) {
+        if (ch === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else q = false; }
+        else field += ch;
+      } else if (ch === '"') q = true;
+      else if (ch === ',') { row.push(field); field = ''; }
+      else if (ch === '\n' || ch === '\r') {
+        if (ch === '\r' && text[i + 1] === '\n') i++;
+        row.push(field); field = ''; if (row.some(x => x !== '')) rows.push(row); row = [];
+      } else field += ch;
+    }
+    row.push(field); if (row.some(x => x !== '')) rows.push(row);
+    return rows;
+  }
+
+  function decodeHtml(t) { const el = document.createElement('textarea'); el.innerHTML = t; return el.value; }
+
+  function isoFromUS(d) { const m = String(d).trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); return m ? m[3] + '-' + ('0' + m[1]).slice(-2) + '-' + ('0' + m[2]).slice(-2) : String(d).trim(); }
+
+  async function onImportFile() {
+    const file = $('impFile').files[0];
+    $('impResult').textContent = ''; $('btnDoImport').classList.add('hidden'); importRows = null;
+    if (!file) return;
+    const source = $('impSource').value;
+    const table = parseCSV(await file.text());
+    const hdr = (table.shift() || []).map(h => h.trim().toLowerCase());
+    const col = n => hdr.indexOf(n);
+    if (source !== 'Chase' || col('card') === -1 || col('transaction date') === -1 || col('amount') === -1) {
+      $('impPreview').textContent = source === 'TD'
+        ? 'TD Bank files aren\'t set up yet.  Send one to Claude once the new cards are active.'
+        : 'This doesn\'t look like a Chase activity file (no Card / Transaction Date / Amount columns).';
+      return;
+    }
+    const from = $('impFrom').value;
+    let skippedOld = 0, payments = 0;
+    const cards = {};
+    importRows = [];
+    table.forEach(f => {
+      const r = { card: f[col('card')], txnDate: f[col('transaction date')], postDate: f[col('post date')],
+                  desc: decodeHtml(f[col('description')] || ''), bankCategory: f[col('category')] || '',
+                  type: f[col('type')] || '', amount: f[col('amount')] };
+      if (from && isoFromUS(r.txnDate) < from) { skippedOld++; return; }
+      if (!/^(sale|return)$/i.test(r.type)) payments++;
+      else cards[r.card] = true;
+      importRows.push(r);
+    });
+    const dates = importRows.map(r => isoFromUS(r.txnDate)).sort();
+    $('impPreview').textContent = (importRows.length - payments) + ' charges and returns from ' + usDate(dates[0]) + ' to ' +
+      usDate(dates[dates.length - 1]) + ' on cards ' + Object.keys(cards).sort().join(', ') + '.  ' + payments +
+      ' payments will be skipped' + (skippedOld ? ', plus ' + skippedOld + ' transactions before ' + usDate(from) : '') + '.';
+    $('btnDoImport').classList.remove('hidden');
+  }
+
+  async function doImport() {
+    if (!importRows) return;
+    const btn = $('btnDoImport');
+    btn.disabled = true; btn.textContent = 'Importing…';
+    $('impResult').className = 'msg';
+    const r = await mgmtCall('importCharges', { source: $('impSource').value, rows: importRows }, $('impResult'));
+    btn.disabled = false; btn.textContent = 'Import';
+    if (!r) return;
+    $('impResult').className = 'msg ok';
+    $('impResult').textContent = 'Imported ' + r.added + ' new charges (' + r.duplicates + ' were already imported).  ' +
+      r.matched + ' matched to submitted receipts.' +
+      (r.unknownCards.length ? '  Unknown cards: ' + r.unknownCards.join(', ') + ' (add them on the Cardholders tab, then import again).' : '');
+    btn.classList.add('hidden');
+  }
+
   /* =========================================================
    * Signal indicator
    * ========================================================= */
@@ -770,6 +942,24 @@
     $('screenGas').addEventListener('input', onReadingInput);
     $('btnGasSubmit').addEventListener('click', submitGas);
     $('btnAddPump').addEventListener('click', addPump);
+    $('btnOpenItems').addEventListener('click', loadOpenItems);
+    $('btnOpenRefresh').addEventListener('click', loadOpenItems);
+    $('openFilter').addEventListener('change', renderOpenItems);
+    $('openWho').addEventListener('input', renderOpenItems);
+    $('openList').addEventListener('click', e => { if (e.target.dataset.review) markReviewed(e.target.dataset.review, e.target); });
+    $('btnSearch').addEventListener('click', () => { show('screenSearch'); $('sAmount').focus(); });
+    $('btnDoSearch').addEventListener('click', doSearch);
+    ['sAmount', 'sText', 'sWho'].forEach(id => $(id).addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); }));
+    $('btnImport').addEventListener('click', () => {
+      $('impFrom').value = new Date().getFullYear() + '-01-01';
+      $('impPreview').textContent = ''; $('impResult').textContent = ''; $('impFile').value = '';
+      $('btnDoImport').classList.add('hidden');
+      show('screenImport');
+    });
+    $('impFile').addEventListener('change', onImportFile);
+    $('impSource').addEventListener('change', onImportFile);
+    $('impFrom').addEventListener('change', onImportFile);
+    $('btnDoImport').addEventListener('click', doImport);
     $('screenGas').addEventListener('click', e => {
       if (e.target.dataset.removePump) removePump(e.target.dataset.removePump);
       if (e.target.dataset.act) setTimeout(updatePumpSum, 0);

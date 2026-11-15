@@ -38,6 +38,12 @@
     <p id="myCar" class="sub"></p>
     <button id="btnGas" class="big gas">Gas</button>
     <button id="btnPurchase" class="big purchase">Purchase</button>
+    <div id="mgmtNav" class="mgmt-nav hidden">
+      <div class="mgmt-title">SFM Management</div>
+      <button class="secondary" id="btnOpenItems">Open Items</button>
+      <button class="secondary" id="btnSearch">Find a Receipt</button>
+      <button class="secondary" id="btnImport">Import Card Statement</button>
+    </div>
     <p id="queueInfo" class="queue hidden"></p>
     <div id="installTip" class="tip hidden"></div>
     <p class="foot">
@@ -88,6 +94,47 @@
     <h1 id="doneTitle">Saved</h1>
     <p id="doneText" class="sub"></p>
     <button class="primary" data-back>Done</button>
+  </section>
+
+  <!-- SFM Management: Open Items -->
+  <section id="screenOpen" class="screen hidden wide">
+    <div class="topline"><h1>Open Items</h1><button class="change" data-back>&larr; Back</button></div>
+    <p id="openSummary" class="sub"></p>
+    <div class="toolbar">
+      <select id="openFilter"><option value="">Red and yellow</option><option value="red">Red only (missing)</option><option value="yellow">Yellow only (late)</option></select>
+      <input id="openWho" placeholder="Filter by name">
+      <button class="secondary small" id="btnOpenRefresh">Refresh</button>
+    </div>
+    <div id="openList"></div>
+  </section>
+
+  <!-- SFM Management: Find a Receipt -->
+  <section id="screenSearch" class="screen hidden wide">
+    <div class="topline"><h1>Find a Receipt</h1><button class="change" data-back>&larr; Back</button></div>
+    <div class="toolbar">
+      <input id="sAmount" inputmode="decimal" placeholder="Exact amount, e.g. 51.92">
+      <input id="sText" placeholder="Store, merchant or note">
+      <input id="sWho" placeholder="Cardholder first name">
+      <label class="inl">From <input id="sFrom" type="date"></label>
+      <label class="inl">To <input id="sTo" type="date"></label>
+      <button class="primary small" id="btnDoSearch">Search</button>
+    </div>
+    <p id="searchMsg" class="sub"></p>
+    <div id="searchResults"></div>
+  </section>
+
+  <!-- SFM Management: Import -->
+  <section id="screenImport" class="screen hidden wide">
+    <div class="topline"><h1>Import Card Statement</h1><button class="change" data-back>&larr; Back</button></div>
+    <p class="sub">Download the account activity as a CSV file from the bank (all cards, any date range) and choose it here.  Importing the same dates again is safe: charges already imported are skipped.</p>
+    <div class="toolbar">
+      <select id="impSource"><option value="Chase">Chase</option><option value="TD">TD Bank</option></select>
+      <label class="inl">Skip transactions before <input id="impFrom" type="date"></label>
+      <input id="impFile" type="file" accept=".csv,text/csv">
+    </div>
+    <p id="impPreview" class="sub"></p>
+    <button class="primary small hidden" id="btnDoImport">Import</button>
+    <p id="impResult" class="msg"></p>
   </section>
 
   <input id="cameraInput" type="file" accept="image/*" capture="environment" class="hidden">
