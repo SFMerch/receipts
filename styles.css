@@ -6,7 +6,7 @@ body {
   padding-bottom: env(safe-area-inset-bottom);
 }
 .bar {
-  background: #1d4e89; color: #fff; display: flex; justify-content: space-between; align-items: center;
+  background: #2e6b30; color: #fff; display: flex; justify-content: space-between; align-items: center;
   padding: calc(12px + env(safe-area-inset-top)) 16px 12px;
 }
 .bar .title { font-weight: 700; font-size: 18px; }
@@ -24,18 +24,18 @@ button {
   cursor: pointer;
 }
 button:disabled { opacity: .6; }
-.primary { background: #1d4e89; color: #fff; }
+.primary { background: #2e6b30; color: #fff; }
 .secondary { background: #e3e8ef; color: #1f2a37; }
 .big { padding: 34px 16px; font-size: 26px; color: #fff; }
-.gas { background: #1f7a4d; }
-.purchase { background: #1d4e89; }
+.gas { background: #4a9a3f; }
+.purchase { background: #1f4d22; }
 .hello { font-size: 24px; font-weight: 700; margin: 4px 0 2px; }
 .sub { color: #5b6776; margin: 0 0 6px; }
 .msg { color: #c0392b; min-height: 1.4em; margin-top: 14px; }
 .msg.ok { color: #1f7a4d; }
 .tip { background: #fff7e0; border: 1px solid #f0d58a; border-radius: 10px; padding: 12px; margin-top: 20px; font-size: 15px; }
 .foot { text-align: center; color: #5b6776; font-size: 14px; margin-top: 28px; line-height: 1.8; }
-.foot a { color: #1d4e89; }
+.foot a { color: #2e6b30; }
 select {
   width: 100%; font-size: 19px; padding: 12px; border: 1px solid #c5ccd6; border-radius: 10px; background: #fff;
 }
@@ -55,7 +55,7 @@ select {
 .reading .yes { background: #1f7a4d; color: #fff; }
 .reading .no { background: #f3d6d2; color: #8a2a1f; }
 .reading .r-note { font-size: 14px; color: #8a6d1f; margin: 2px 0 6px; }
-.reading .change { background: none; color: #1d4e89; width: auto; padding: 0; margin: 0; font-size: 15px; font-weight: 600; text-decoration: underline; }
+.reading .change { background: none; color: #2e6b30; width: auto; padding: 0; margin: 0; font-size: 15px; font-weight: 600; text-decoration: underline; }
 .warn { background: #fdecea; border: 1px solid #f5c2bc; color: #8a2a1f; border-radius: 10px; padding: 12px; font-size: 15px; }
 .queue { background: #fff7e0; border: 1px solid #f0d58a; border-radius: 10px; padding: 10px 12px; margin-top: 18px; font-size: 15px; text-align: center; }
 .busy { color: #5b6776; font-size: 15px; margin-top: 10px; }
