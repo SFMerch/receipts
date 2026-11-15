@@ -4,9 +4,12 @@
 
   const API = window.SFM_API_URL || '';
   const KEY = 'sfm_session';
+  const OTHER = '__other';
   const $ = id => document.getElementById(id);
 
-  /* ---------- Session stored on the phone ---------- */
+  /* =========================================================
+   * Session stored on the phone
+   * ========================================================= */
   function loadSession() {
     try {
       const s = JSON.parse(localStorage.getItem(KEY) || 'null');
@@ -17,11 +20,13 @@
   function saveSession(s) { try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) { /* ignore */ } }
   function clearSession() { try { localStorage.removeItem(KEY); } catch (e) { /* ignore */ } }
 
-  /* ---------- Back end calls ---------- */
-  async function api(action, data) {
+  /* =========================================================
+   * Back end calls
+   * ========================================================= */
+  async function api(action, data, timeoutMs) {
     if (!API) throw new Error('NOT_CONFIGURED');
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 20000);
+    const t = setTimeout(() => ctrl.abort(), timeoutMs || 30000);
     try {
       const resp = await fetch(API, {
         method: 'POST',
@@ -35,7 +40,89 @@
     }
   }
 
-  /* ---------- Screens ---------- */
+  /* =========================================================
+   * Outbox: entries saved on the phone until they reach the server
+   * (IndexedDB survives closing the app and restarting the phone)
+   * ========================================================= */
+  const Outbox = (function () {
+    let dbp = null;
+    function db() {
+      if (!dbp) {
+        dbp = new Promise((res, rej) => {
+          const r = indexedDB.open('sfm-receipts', 1);
+          r.onupgradeneeded = () => r.result.createObjectStore('outbox', { keyPath: 'id' });
+          r.onsuccess = () => res(r.result);
+          r.onerror = () => rej(r.error);
+        });
+      }
+      return dbp;
+    }
+    async function tx(mode, fn) {
+      const d = await db();
+      return new Promise((res, rej) => {
+        const t = d.transaction('outbox', mode);
+        const store = t.objectStore('outbox');
+        const out = fn(store);
+        t.oncomplete = () => res(out && out.result !== undefined ? out.result : undefined);
+        t.onerror = () => rej(t.error);
+      });
+    }
+    return {
+      put: item => tx('readwrite', s => s.put(item)),
+      remove: id => tx('readwrite', s => s.delete(id)),
+      all: () => tx('readonly', s => s.getAll()),
+      count: () => tx('readonly', s => s.count())
+    };
+  })();
+
+  let flushing = false;
+  async function flushOutbox() {
+    if (flushing || !navigator.onLine || !API) return;
+    const s = loadSession();
+    if (!s) return;
+    flushing = true;
+    try {
+      const items = await Outbox.all();
+      for (const item of items) {
+        try {
+          const r = await api(item.action, { token: s.token, data: item.data }, 90000);
+          if (r.ok) {
+            await Outbox.remove(item.id);
+          } else if (r.error === 'LOGGED_OUT') {
+            clearSession();
+            showLogin('Please sign in again.  Your saved receipts will send after you sign in.');
+            break;
+          } else {
+            item.lastError = r.error || 'Error';
+            await Outbox.put(item);
+          }
+        } catch (e) {
+          break; // weak or no signal: try again later
+        }
+      }
+    } finally {
+      flushing = false;
+      updateQueueInfo();
+    }
+  }
+
+  async function updateQueueInfo() {
+    let n = 0;
+    try { n = await Outbox.count(); } catch (e) { /* ignore */ }
+    const q = $('queueInfo');
+    if (n > 0) {
+      q.textContent = 'Waiting to send: ' + n + (n === 1 ? ' entry' : ' entries') +
+        '.  It will send automatically when you have signal.';
+      q.classList.remove('hidden');
+    } else {
+      q.classList.add('hidden');
+    }
+    return n;
+  }
+
+  /* =========================================================
+   * Screens
+   * ========================================================= */
   function show(id) {
     document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
     $(id).classList.remove('hidden');
@@ -44,24 +131,28 @@
 
   function showLogin(msg) {
     $('loginPin').value = '';
-    setMsg(msg || '');
+    setMsg($('loginMsg'), msg || '');
     show('screenLogin');
   }
 
-  function setMsg(text, ok) {
-    const m = $('loginMsg');
-    m.textContent = text;
-    m.className = 'msg' + (ok ? ' ok' : '');
+  function setMsg(el, text, ok) {
+    el.textContent = text;
+    el.className = 'msg' + (ok ? ' ok' : '');
   }
 
   function showHome(s) {
     $('helloName').textContent = s.user.name;
     const car = (s.cars || []).find(c => c.id === s.myCarId);
     $('myCar').textContent = car ? 'Your car: ' + car.label : '';
-    const until = new Date(s.expires);
-    $('sessionInfo').textContent = 'Signed in until ' + until.toLocaleDateString();
+    $('sessionInfo').textContent = 'Signed in until ' + new Date(s.expires).toLocaleDateString();
     showInstallTip();
+    updateQueueInfo();
     show('screenHome');
+  }
+
+  function goHome() {
+    const s = loadSession();
+    if (s) showHome(s); else showLogin();
   }
 
   function showInstallTip() {
@@ -75,25 +166,29 @@
     tip.classList.remove('hidden');
   }
 
-  /* ---------- Login ---------- */
+  /* =========================================================
+   * Login / logout
+   * ========================================================= */
   async function doLogin() {
+    const msg = $('loginMsg');
     const name = $('loginName').value.trim();
     const pin = $('loginPin').value.trim();
-    if (!name || !/^\d{6}$/.test(pin)) { setMsg('Enter your first name and 6-digit PIN.'); return; }
-    if (!navigator.onLine) { setMsg('No service.  You need a signal to sign in the first time.'); return; }
+    if (!name || !/^\d{6}$/.test(pin)) { setMsg(msg, 'Enter your first name and 6-digit PIN.'); return; }
+    if (!navigator.onLine) { setMsg(msg, 'No service.  You need a signal to sign in the first time.'); return; }
 
     const btn = $('btnLogin');
-    btn.disabled = true; btn.textContent = 'Signing in…'; setMsg('');
+    btn.disabled = true; btn.textContent = 'Signing in…'; setMsg(msg, '');
     try {
       const r = await api('login', { name: name, pin: pin });
-      if (!r.ok) { setMsg(r.error || 'Sign-in failed.'); return; }
+      if (!r.ok) { setMsg(msg, r.error || 'Sign-in failed.'); return; }
       const s = { token: r.token, expires: r.expires, user: r.user, cars: r.cars,
                   myCarId: r.myCarId, categories: r.categories };
       saveSession(s);
       try { localStorage.setItem('sfm_last_name', s.user.name); } catch (e) { /* ignore */ }
       showHome(s);
+      flushOutbox();
     } catch (e) {
-      setMsg(e.message === 'NOT_CONFIGURED'
+      setMsg(msg, e.message === 'NOT_CONFIGURED'
         ? 'The app is not connected to the back end yet.'
         : 'Could not reach the server.  Check your signal and try again.');
     } finally {
@@ -102,14 +197,18 @@
   }
 
   async function doLogout() {
-    if (!confirm('Sign out of SFM Receipts on this phone?')) return;
+    const pending = await updateQueueInfo();
+    const warn = pending
+      ? 'You have ' + pending + ' entr' + (pending === 1 ? 'y' : 'ies') + ' still waiting to send.  They will stay on this phone and send after you sign in again.\n\nSign out?'
+      : 'Sign out of SFM Receipts on this phone?';
+    if (!confirm(warn)) return;
     const s = loadSession();
     clearSession();
     showLogin('');
     if (s && navigator.onLine) { try { await api('logout', { token: s.token }); } catch (e) { /* ignore */ } }
   }
 
-  /* Refresh car list / categories whenever there's signal, so pick lists work offline. */
+  /* Keep car list / categories fresh whenever there's signal, so pick lists work offline. */
   async function refreshData() {
     const s = loadSession();
     if (!s || !navigator.onLine || !API) return;
@@ -126,31 +225,295 @@
     } catch (e) { /* weak signal: keep using the saved copy */ }
   }
 
-  /* ---------- Signal indicator ---------- */
+  /* =========================================================
+   * Photos: take, shrink to ~1600px JPEG
+   * ========================================================= */
+  let photoTarget = null;
+
+  function takePhoto(kind) {
+    photoTarget = kind;
+    const input = $('cameraInput');
+    input.value = '';
+    input.click();
+  }
+
+  function loadImage(file) {
+    return new Promise((res, rej) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => { URL.revokeObjectURL(url); res(img); };
+      img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('Could not open photo')); };
+      img.src = url;
+    });
+  }
+
+  async function shrinkPhoto(file) {
+    const img = await loadImage(file);
+    const max = 1600;
+    const scale = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+    const w = Math.round(img.naturalWidth * scale), h = Math.round(img.naturalHeight * scale);
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    c.getContext('2d').drawImage(img, 0, 0, w, h);
+    return c.toDataURL('image/jpeg', 0.72).split(',')[1];
+  }
+
+  /* =========================================================
+   * Readings: AI value with Confirm / Incorrect, or typed value
+   * ========================================================= */
+  // state: 'none' | 'reading' | 'ai' | 'confirmed' | 'manual'
+  function newField() { return { state: 'none', ai: null, value: '', note: '' }; }
+
+  function fmt(field, v) {
+    if (v === '' || v == null) return '';
+    if (field === 'total') return '$' + Number(v).toFixed(2);
+    if (field === 'odometer') return Number(v).toLocaleString();
+    return String(v);
+  }
+
+  function renderReading(field) {
+    const el = document.querySelector('.reading[data-field="' + field + '"]');
+    const f = gas.fields[field];
+    const label = el.dataset.label;
+    if (f.state === 'none') { el.innerHTML = ''; return; }
+    if (f.state === 'reading') {
+      el.innerHTML = '<div class="busy">Reading ' + label.toLowerCase() + ' from photo…</div>';
+      return;
+    }
+    if (f.state === 'ai') {
+      el.innerHTML = '<div class="r-label">' + label + '</div>' +
+        '<div class="r-value">' + fmt(field, f.ai) + '</div>' +
+        '<div class="r-btns"><button class="yes" data-act="confirm">Confirm</button>' +
+        '<button class="no" data-act="incorrect">Incorrect</button></div>';
+    } else if (f.state === 'confirmed') {
+      el.innerHTML = '<div class="r-label">' + label + '</div>' +
+        '<div class="r-value ok">' + fmt(field, f.value) + '</div>' +
+        '<button class="change" data-act="incorrect">Change</button>';
+    } else if (f.state === 'manual') {
+      const mode = field === 'odometer' ? 'numeric' : 'decimal';
+      el.innerHTML = '<div class="r-label">' + label + (field === 'total' ? ' ($)' : '') + '</div>' +
+        (f.note ? '<div class="r-note">' + f.note + '</div>' : '') +
+        '<input inputmode="' + mode + '" data-act="type" value="' + (f.value || '') + '" placeholder="Type ' + label.toLowerCase() + '">';
+    }
+  }
+
+  function onReadingClick(e) {
+    const act = e.target.dataset.act;
+    const el = e.target.closest('.reading');
+    if (!act || !el) return;
+    const field = el.dataset.field;
+    const f = gas.fields[field];
+    if (act === 'confirm') { f.value = f.ai; f.state = 'confirmed'; renderReading(field); }
+    if (act === 'incorrect') {
+      f.value = ''; f.note = 'Type the correct ' + el.dataset.label.toLowerCase() + '.';
+      f.state = 'manual'; renderReading(field);
+      const inp = el.querySelector('input'); if (inp) inp.focus();
+    }
+  }
+
+  function onReadingInput(e) {
+    if (e.target.dataset.act !== 'type') return;
+    const field = e.target.closest('.reading').dataset.field;
+    gas.fields[field].value = e.target.value.replace(/[$,\s]/g, '');
+  }
+
+  function setManual(fields, note) {
+    fields.forEach(k => {
+      const f = gas.fields[k];
+      if (f.state !== 'confirmed') { f.state = 'manual'; f.note = note; }
+      renderReading(k);
+    });
+  }
+
+  async function readWithAI(kind, fields, base64) {
+    if (!navigator.onLine) {
+      $('gasNoService').classList.remove('hidden');
+      setManual(fields, '');
+      return;
+    }
+    fields.forEach(k => { gas.fields[k] = newField(); gas.fields[k].state = 'reading'; renderReading(k); });
+    const s = loadSession();
+    let r = null;
+    try { r = await api('readPhoto', { token: s && s.token, kind: kind, image: base64 }, 45000); }
+    catch (e) { r = null; }
+    if (!r || !r.ok) {
+      setManual(fields, r && r.error === 'LOGGED_OUT'
+        ? 'Please type it in.'
+        : "Couldn't read the photo right now.  Please type it in.");
+      return;
+    }
+    gas.ai[kind] = r.fields;
+    fields.forEach(k => {
+      const v = r.fields[k];
+      const f = gas.fields[k];
+      if (v == null || v === '' || isNaN(Number(v))) {
+        f.state = 'manual'; f.note = "Couldn't read this clearly.  Please type it in.";
+      } else {
+        f.ai = Number(v); f.state = 'ai';
+      }
+      renderReading(k);
+    });
+  }
+
+  /* =========================================================
+   * Gas entry
+   * ========================================================= */
+  let gas = null;
+
+  function uuid() {
+    if (crypto.randomUUID) return crypto.randomUUID();
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    });
+  }
+
+  function startGas() {
+    const s = loadSession();
+    if (!s) { showLogin(); return; }
+    gas = {
+      clientId: uuid(), capturedAt: new Date().toISOString(),
+      photos: { pump: null, odometer: null }, ai: { pump: null, odometer: null },
+      fields: { total: newField(), gallons: newField(), odometer: newField() }
+    };
+    const sel = $('gasCar');
+    sel.innerHTML = '';
+    if (!s.myCarId) sel.add(new Option('Choose vehicle…', ''));
+    (s.cars || []).forEach(c => sel.add(new Option(c.label, c.id)));
+    sel.add(new Option('Not an SFM vehicle (rental, etc.)', OTHER));
+    sel.value = s.myCarId || '';
+    $('gasOtherDesc').value = '';
+    $('gasOtherWrap').classList.add('hidden');
+    $('gasNoService').classList.toggle('hidden', navigator.onLine);
+    ['pumpThumb', 'odometerThumb'].forEach(id => { $(id).src = ''; $(id).classList.add('hidden'); });
+    document.querySelectorAll('[data-photo]').forEach(b => { b.textContent = 'Take photo'; });
+    ['total', 'gallons', 'odometer'].forEach(renderReading);
+    setMsg($('gasMsg'), '');
+    show('screenGas');
+  }
+
+  async function onPhotoChosen() {
+    const file = $('cameraInput').files[0];
+    if (!file || !gas || !photoTarget) return;
+    const kind = photoTarget;
+    let b64;
+    try { b64 = await shrinkPhoto(file); }
+    catch (e) { setMsg($('gasMsg'), 'That photo could not be opened.  Please try again.'); return; }
+    gas.photos[kind] = b64;
+    gas.ai[kind] = null;
+    const thumb = $(kind + 'Thumb');
+    thumb.src = 'data:image/jpeg;base64,' + b64;
+    thumb.classList.remove('hidden');
+    document.querySelector('[data-photo="' + kind + '"]').textContent = 'Retake photo';
+    setMsg($('gasMsg'), '');
+    await readWithAI(kind, kind === 'pump' ? ['total', 'gallons'] : ['odometer'], b64);
+  }
+
+  function fieldValue(k) {
+    const f = gas.fields[k];
+    if (f.state === 'confirmed' || f.state === 'manual') {
+      const n = Number(f.value);
+      return f.value !== '' && !isNaN(n) && n > 0 ? n : null;
+    }
+    return null;
+  }
+
+  async function submitGas() {
+    const msg = $('gasMsg');
+    const carId = $('gasCar').value;
+    const other = $('gasOtherDesc').value.trim();
+    if (!carId) return setMsg(msg, 'Choose the vehicle.');
+    if (carId === OTHER && !other) return setMsg(msg, 'Describe the vehicle (for example, "Avis rental").');
+    if (!gas.photos.pump) return setMsg(msg, 'Take a photo of the pump display or receipt.');
+    if (!gas.photos.odometer) return setMsg(msg, 'Take a photo of the odometer.');
+
+    const pending = ['total', 'gallons', 'odometer'].filter(k => gas.fields[k].state === 'ai');
+    if (pending.length) return setMsg(msg, 'Tap Confirm or Incorrect for each reading.');
+    if (['total', 'gallons', 'odometer'].some(k => gas.fields[k].state === 'reading'))
+      return setMsg(msg, 'Still reading the photo.  One moment…');
+
+    const total = fieldValue('total'), gallons = fieldValue('gallons'), odometer = fieldValue('odometer');
+    if (total == null) return setMsg(msg, 'Enter the sale total.');
+    if (gallons == null) return setMsg(msg, 'Enter the gallons.');
+    if (odometer == null || Math.round(odometer) !== odometer) return setMsg(msg, 'Enter the odometer in whole miles.');
+
+    const ppg = total / gallons;
+    if (ppg < 1.5 || ppg > 10) {
+      if (!confirm('That works out to $' + ppg.toFixed(2) + ' per gallon.  Are the total and gallons right?')) return;
+    }
+
+    const data = {
+      clientId: gas.clientId, capturedAt: gas.capturedAt,
+      carId: carId === OTHER ? '' : carId, otherCar: carId === OTHER ? other : '',
+      total: total, gallons: gallons, odometer: odometer,
+      pumpPhoto: gas.photos.pump, odometerPhoto: gas.photos.odometer,
+      ai: { pump: gas.ai.pump, odometer: gas.ai.odometer },
+      enteredOffline: !gas.ai.pump || !gas.ai.odometer
+    };
+
+    const btn = $('btnGasSubmit');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      await Outbox.put({ id: gas.clientId, action: 'submitGas', data: data, savedAt: Date.now() });
+    } catch (e) {
+      btn.disabled = false; btn.textContent = 'Submit';
+      return setMsg(msg, 'Could not save on this phone.  Please try again.');
+    }
+    btn.textContent = 'Sending…';
+    await flushOutbox();
+    const left = await updateQueueInfo();
+    btn.disabled = false; btn.textContent = 'Submit';
+    gas = null;
+
+    if (left === 0) {
+      $('doneTitle').textContent = 'Sent';
+      $('doneText').textContent = 'Thanks!  Your gas receipt was submitted.';
+    } else {
+      $('doneTitle').textContent = 'Saved on your phone';
+      $('doneText').textContent = 'No service right now.  Your receipt is saved and will send automatically when you have signal.  You can close the app.';
+    }
+    show('screenDone');
+  }
+
+  /* =========================================================
+   * Signal indicator
+   * ========================================================= */
   function updateNet() {
     const n = $('netStatus');
     if (navigator.onLine) { n.textContent = ''; n.className = 'net'; }
     else { n.textContent = 'No service'; n.className = 'net offline'; }
   }
 
-  /* ---------- Wire up ---------- */
+  /* =========================================================
+   * Wire up
+   * ========================================================= */
   function init() {
     $('btnLogin').addEventListener('click', doLogin);
     $('loginPin').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
     $('lnkLogout').addEventListener('click', e => { e.preventDefault(); doLogout(); });
-    $('btnGas').addEventListener('click', () => { $('soonTitle').textContent = 'Gas'; show('screenSoon'); });
+    $('btnGas').addEventListener('click', startGas);
     $('btnPurchase').addEventListener('click', () => { $('soonTitle').textContent = 'Purchase'; show('screenSoon'); });
-    document.querySelectorAll('[data-back]').forEach(b => b.addEventListener('click', () => {
-      const s = loadSession(); if (s) showHome(s); else showLogin();
-    }));
-    window.addEventListener('online', () => { updateNet(); refreshData(); });
+    document.querySelectorAll('[data-back]').forEach(b => b.addEventListener('click', goHome));
+
+    $('gasCar').addEventListener('change', () => {
+      $('gasOtherWrap').classList.toggle('hidden', $('gasCar').value !== OTHER);
+    });
+    document.querySelectorAll('[data-photo]').forEach(b =>
+      b.addEventListener('click', () => takePhoto(b.dataset.photo)));
+    $('cameraInput').addEventListener('change', onPhotoChosen);
+    $('screenGas').addEventListener('click', onReadingClick);
+    $('screenGas').addEventListener('input', onReadingInput);
+    $('btnGasSubmit').addEventListener('click', submitGas);
+
+    window.addEventListener('online', () => { updateNet(); refreshData(); flushOutbox(); });
     window.addEventListener('offline', updateNet);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) flushOutbox(); });
+    setInterval(flushOutbox, 60000);
     updateNet();
 
     try { $('loginName').value = localStorage.getItem('sfm_last_name') || ''; } catch (e) { /* ignore */ }
 
     const s = loadSession();
-    if (s) { showHome(s); refreshData(); } else { showLogin(); }
+    if (s) { showHome(s); refreshData(); flushOutbox(); } else { showLogin(); }
 
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => { /* app still works online */ });

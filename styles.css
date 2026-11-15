@@ -36,3 +36,26 @@ button:disabled { opacity: .6; }
 .tip { background: #fff7e0; border: 1px solid #f0d58a; border-radius: 10px; padding: 12px; margin-top: 20px; font-size: 15px; }
 .foot { text-align: center; color: #5b6776; font-size: 14px; margin-top: 28px; line-height: 1.8; }
 .foot a { color: #1d4e89; }
+select {
+  width: 100%; font-size: 19px; padding: 12px; border: 1px solid #c5ccd6; border-radius: 10px; background: #fff;
+}
+.step { background: #fff; border-radius: 12px; padding: 14px; margin-top: 18px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.step-title { font-weight: 700; font-size: 18px; }
+.hint { color: #5b6776; font-size: 15px; margin: 4px 0 0; }
+.photo-btn { background: #e3e8ef; color: #1f2a37; margin-top: 10px; padding: 14px; }
+.thumb { display: block; max-width: 100%; max-height: 180px; margin: 12px auto 0; border-radius: 8px; }
+.thumb.hidden { display: none; }
+.reading { margin-top: 12px; }
+.reading:empty { display: none; }
+.reading .r-label { font-weight: 600; color: #5b6776; font-size: 15px; }
+.reading .r-value { font-size: 24px; font-weight: 700; margin: 2px 0 6px; }
+.reading .r-value.ok::after { content: "  \2713"; color: #1f7a4d; }
+.reading .r-btns { display: flex; gap: 10px; }
+.reading .r-btns button { margin-top: 0; padding: 12px; font-size: 17px; }
+.reading .yes { background: #1f7a4d; color: #fff; }
+.reading .no { background: #f3d6d2; color: #8a2a1f; }
+.reading .r-note { font-size: 14px; color: #8a6d1f; margin: 2px 0 6px; }
+.reading .change { background: none; color: #1d4e89; width: auto; padding: 0; margin: 0; font-size: 15px; font-weight: 600; text-decoration: underline; }
+.warn { background: #fdecea; border: 1px solid #f5c2bc; color: #8a2a1f; border-radius: 10px; padding: 12px; font-size: 15px; }
+.queue { background: #fff7e0; border: 1px solid #f0d58a; border-radius: 10px; padding: 10px 12px; margin-top: 18px; font-size: 15px; text-align: center; }
+.busy { color: #5b6776; font-size: 15px; margin-top: 10px; }

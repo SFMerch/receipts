@@ -38,6 +38,7 @@
     <p id="myCar" class="sub"></p>
     <button id="btnGas" class="big gas">Gas</button>
     <button id="btnPurchase" class="big purchase">Purchase</button>
+    <p id="queueInfo" class="queue hidden"></p>
     <div id="installTip" class="tip hidden"></div>
     <p class="foot">
       <span id="sessionInfo"></span><br>
@@ -45,7 +46,49 @@
     </p>
   </section>
 
-  <!-- Placeholder for Gas / Purchase (built in the next step) -->
+  <!-- Gas -->
+  <section id="screenGas" class="screen hidden">
+    <h1>Gas</h1>
+    <p id="gasNoService" class="warn hidden">No service available.  Please enter the sale total, gallons and odometer below.  Your photos will send when signal returns.</p>
+
+    <label for="gasCar">Vehicle</label>
+    <select id="gasCar"></select>
+    <div id="gasOtherWrap" class="hidden">
+      <label for="gasOtherDesc">Describe the vehicle</label>
+      <input id="gasOtherDesc" placeholder="e.g. Avis rental, white Malibu">
+    </div>
+
+    <div class="step">
+      <div class="step-title">1.  Pump display or receipt</div>
+      <p class="hint">Show the total sale, gallons and price per gallon.</p>
+      <button class="photo-btn" data-photo="pump">Take photo</button>
+      <img id="pumpThumb" class="thumb hidden" alt="">
+      <div class="reading" data-field="total" data-label="Total" data-money="1"></div>
+      <div class="reading" data-field="gallons" data-label="Gallons"></div>
+    </div>
+
+    <div class="step">
+      <div class="step-title">2.  Odometer</div>
+      <button class="photo-btn" data-photo="odometer">Take photo</button>
+      <img id="odometerThumb" class="thumb hidden" alt="">
+      <div class="reading" data-field="odometer" data-label="Odometer"></div>
+    </div>
+
+    <p id="gasMsg" class="msg"></p>
+    <button id="btnGasSubmit" class="primary">Submit</button>
+    <button class="secondary" data-back>Cancel</button>
+  </section>
+
+  <!-- Saved -->
+  <section id="screenDone" class="screen hidden">
+    <h1 id="doneTitle">Saved</h1>
+    <p id="doneText" class="sub"></p>
+    <button class="primary" data-back>Done</button>
+  </section>
+
+  <input id="cameraInput" type="file" accept="image/*" capture="environment" class="hidden">
+
+  <!-- Placeholder for Purchase (built in the next step) -->
   <section id="screenSoon" class="screen hidden">
     <h1 id="soonTitle"></h1>
     <p class="sub">This screen is coming in the next update.</p>
