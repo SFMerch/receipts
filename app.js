@@ -328,6 +328,7 @@
   }
 
   async function readWithAI(kind, fields, base64) {
+    const apiKind = kind.split('_')[0];
     if (!navigator.onLine) {
       $(cur.noService).classList.remove('hidden');
       setManual(fields, '');
@@ -337,7 +338,7 @@
     fields.forEach(k => { cur.fields[k] = newField(); cur.fields[k].state = 'reading'; renderReading(k); });
     const s = loadSession();
     let r = null;
-    try { r = await api('readPhoto', { token: s && s.token, kind: kind, image: base64 }, 45000); }
+    try { r = await api('readPhoto', { token: s && s.token, kind: apiKind, image: base64 }, 45000); }
     catch (e) { r = null; }
     if (!r || !r.ok) {
       if (kind === 'receipt') renderUnclear();
@@ -348,7 +349,7 @@
     }
     cur.ai[kind] = r.fields;
     fields.forEach(k => {
-      const raw = r.fields[k];
+      const raw = r.fields[k.split('_')[0]];
       const v = raw == null ? null : Number(String(raw).replace(/[$,\s]/g, ''));
       const f = cur.fields[k];
       if (v == null || raw === '' || isNaN(v)) {
@@ -388,6 +389,10 @@
     (s.cars || []).forEach(c => sel.add(new Option(c.label, c.id)));
     sel.add(new Option('Not an SFM vehicle (rental, etc.)', OTHER));
     sel.value = s.myCarId || '';
+    gas.pumpKeys = ['pump'];
+    gas.nextPump = 1;
+    $('extraPumps').innerHTML = '';
+    $('pumpSum').textContent = '';
     $('gasOtherDesc').value = '';
     $('gasOtherWrap').classList.add('hidden');
     $('gasNoService').classList.toggle('hidden', navigator.onLine);
@@ -412,8 +417,11 @@
     thumb.classList.remove('hidden');
     $(cur.screen).querySelector('[data-photo="' + kind + '"]').textContent = 'Retake photo';
     setMsg($(cur.msg), '');
-    const fieldsFor = { pump: ['total', 'gallons'], odometer: ['odometer'], receipt: ['total'] };
-    await readWithAI(kind, fieldsFor[kind], b64);
+    const sfx = kind.indexOf('_') > -1 ? kind.slice(kind.indexOf('_')) : '';
+    const fieldsFor = kind.indexOf('pump') === 0 ? ['total' + sfx, 'gallons' + sfx]
+      : kind === 'odometer' ? ['odometer'] : ['total'];
+    await readWithAI(kind, fieldsFor, b64);
+    updatePumpSum();
   }
 
   function fieldValue(k) {
@@ -431,31 +439,44 @@
     const other = $('gasOtherDesc').value.trim();
     if (!carId) return setMsg(msg, 'Choose the vehicle.');
     if (carId === OTHER && !other) return setMsg(msg, 'Describe the vehicle (for example, "Avis rental").');
-    if (!gas.photos.pump) return setMsg(msg, 'Take a photo of the pump display or receipt.');
+    const keys = gas.pumpKeys;
+    for (let i = 0; i < keys.length; i++) {
+      if (!gas.photos[keys[i]]) return setMsg(msg, keys.length > 1
+        ? 'Take a photo of pump receipt ' + (i + 1) + ' (or remove it).'
+        : 'Take a photo of the pump display or receipt.');
+    }
     if (!gas.photos.odometer) return setMsg(msg, 'Take a photo of the odometer.');
 
-    const pending = ['total', 'gallons', 'odometer'].filter(k => gas.fields[k].state === 'ai');
-    if (pending.length) return setMsg(msg, 'Tap Confirm or Incorrect for each reading.');
-    if (['total', 'gallons', 'odometer'].some(k => gas.fields[k].state === 'reading'))
-      return setMsg(msg, 'Still reading the photo.  One moment…');
+    const allFields = Object.keys(gas.fields);
+    if (allFields.some(k => gas.fields[k].state === 'reading')) return setMsg(msg, 'Still reading the photo.  One moment…');
+    if (allFields.some(k => gas.fields[k].state === 'ai')) return setMsg(msg, 'Tap Confirm or Incorrect for each reading.');
 
-    const total = fieldValue('total'), gallons = fieldValue('gallons'), odometer = fieldValue('odometer');
-    if (total == null) return setMsg(msg, 'Enter the sale total.');
-    if (gallons == null) return setMsg(msg, 'Enter the gallons.');
+    const pumps = [];
+    for (let i = 0; i < keys.length; i++) {
+      const sfx = keys[i].indexOf('_') > -1 ? keys[i].slice(keys[i].indexOf('_')) : '';
+      const t = fieldValue('total' + sfx), g = fieldValue('gallons' + sfx);
+      const which = keys.length > 1 ? ' for pump receipt ' + (i + 1) : '';
+      if (t == null) return setMsg(msg, 'Enter the sale total' + which + '.');
+      if (g == null) return setMsg(msg, 'Enter the gallons' + which + '.');
+      pumps.push({ total: t, gallons: g, photo: gas.photos[keys[i]], ai: gas.ai[keys[i]] });
+    }
+    const odometer = fieldValue('odometer');
     if (odometer == null || Math.round(odometer) !== odometer) return setMsg(msg, 'Enter the odometer in whole miles.');
 
+    const total = Math.round(pumps.reduce((a, p) => a + p.total, 0) * 100) / 100;
+    const gallons = Math.round(pumps.reduce((a, p) => a + p.gallons, 0) * 1000) / 1000;
     const ppg = total / gallons;
     if (ppg < 1.5 || ppg > 10) {
-      if (!confirm('That works out to $' + ppg.toFixed(2) + ' per gallon.  Are the total and gallons right?')) return;
+      if (!confirm('That works out to $' + ppg.toFixed(2) + ' per gallon.  Are the totals and gallons right?')) return;
     }
 
     const data = {
       clientId: gas.clientId, capturedAt: gas.capturedAt,
       carId: carId === OTHER ? '' : carId, otherCar: carId === OTHER ? other : '',
       total: total, gallons: gallons, odometer: odometer,
-      pumpPhoto: gas.photos.pump, odometerPhoto: gas.photos.odometer,
-      ai: { pump: gas.ai.pump, odometer: gas.ai.odometer },
-      enteredOffline: !gas.ai.pump || !gas.ai.odometer
+      pumps: pumps, pumpPhoto: pumps[0].photo, odometerPhoto: gas.photos.odometer,
+      ai: { pump: pumps[0].ai, odometer: gas.ai.odometer },
+      enteredOffline: pumps.some(p => !p.ai) || !gas.ai.odometer
     };
 
     await saveAndSend('submitGas', data, $('btnGasSubmit'), msg, 'gas entry');
@@ -487,6 +508,60 @@
     show('screenDone');
   }
 
+
+  function addPump() {
+    const i = gas.nextPump++;
+    const key = 'pump_' + i;
+    gas.pumpKeys.push(key);
+    gas.photos[key] = null; gas.ai[key] = null;
+    gas.fields['total_' + i] = newField(); gas.fields['gallons_' + i] = newField();
+    const n = gas.pumpKeys.length;
+    const div = document.createElement('div');
+    div.className = 'part'; div.dataset.pump = key;
+    div.innerHTML = '<div class="part-head">Pump receipt ' + n +
+      ' <button class="change" data-remove-pump="' + key + '">Remove</button></div>' +
+      '<button class="photo-btn" data-photo="' + key + '">Take photo</button>' +
+      '<img id="' + key + 'Thumb" class="thumb hidden" alt="">' +
+      '<div class="reading" data-field="total_' + i + '" data-label="Total"></div>' +
+      '<div class="reading" data-field="gallons_' + i + '" data-label="Gallons"></div>';
+    $('extraPumps').appendChild(div);
+    div.querySelector('[data-photo]').addEventListener('click', () => takePhoto(key));
+    renumberPumps();
+    updatePumpSum();
+  }
+
+  function removePump(key) {
+    const i = key.split('_')[1];
+    gas.pumpKeys = gas.pumpKeys.filter(k => k !== key);
+    delete gas.photos[key]; delete gas.ai[key];
+    delete gas.fields['total_' + i]; delete gas.fields['gallons_' + i];
+    const el = $('extraPumps').querySelector('[data-pump="' + key + '"]');
+    if (el) el.remove();
+    renumberPumps();
+    updatePumpSum();
+  }
+
+  function renumberPumps() {
+    $('extraPumps').querySelectorAll('.part').forEach((el, idx) => {
+      el.querySelector('.part-head').firstChild.textContent = 'Pump receipt ' + (idx + 2) + ' ';
+    });
+  }
+
+  function updatePumpSum() {
+    if (!gas || cur !== gas) return;
+    const el = $('pumpSum');
+    if (gas.pumpKeys.length < 2) { el.textContent = ''; return; }
+    let t = 0, g = 0;
+    gas.pumpKeys.forEach(k => {
+      const sfx = k.indexOf('_') > -1 ? k.slice(k.indexOf('_')) : '';
+      const f1 = gas.fields['total' + sfx], f2 = gas.fields['gallons' + sfx];
+      const v1 = f1 && (f1.state === 'confirmed' || f1.state === 'manual') ? Number(f1.value) : (f1 && f1.ai) || 0;
+      const v2 = f2 && (f2.state === 'confirmed' || f2.state === 'manual') ? Number(f2.value) : (f2 && f2.ai) || 0;
+      t += Number(v1) || 0; g += Number(v2) || 0;
+    });
+    el.textContent = 'Fill-up total: $' + t.toFixed(2) + ', ' + (Math.round(g * 1000) / 1000) + ' gallons';
+    el.className = 'split-left good';
+  }
 
   /* =========================================================
    * Purchase entry
@@ -694,6 +769,12 @@
     $('screenGas').addEventListener('click', onReadingClick);
     $('screenGas').addEventListener('input', onReadingInput);
     $('btnGasSubmit').addEventListener('click', submitGas);
+    $('btnAddPump').addEventListener('click', addPump);
+    $('screenGas').addEventListener('click', e => {
+      if (e.target.dataset.removePump) removePump(e.target.dataset.removePump);
+      if (e.target.dataset.act) setTimeout(updatePumpSum, 0);
+    });
+    $('screenGas').addEventListener('input', () => setTimeout(updatePumpSum, 0));
 
     window.addEventListener('online', () => { updateNet(); refreshData(); flushOutbox(); });
     window.addEventListener('offline', updateNet);
