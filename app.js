@@ -149,6 +149,7 @@
     showInstallTip();
     updateQueueInfo();
     $('mgmtNav').classList.toggle('hidden', !isMgmt(s));
+    renderMyCompliance(s);
     show('screenHome');
   }
 
@@ -184,7 +185,7 @@
       const r = await api('login', { name: name, pin: pin });
       if (!r.ok) { setMsg(msg, r.error || 'Sign-in failed.'); return; }
       const s = { token: r.token, expires: r.expires, user: r.user, cars: r.cars,
-                  myCarId: r.myCarId, categories: r.categories };
+                  myCarId: r.myCarId, categories: r.categories, compliance: r.compliance };
       saveSession(s);
       try { localStorage.setItem('sfm_last_name', s.user.name); } catch (e) { /* ignore */ }
       showHome(s);
@@ -217,7 +218,7 @@
     try {
       const r = await api('bootstrap', { token: s.token });
       if (r.ok) {
-        Object.assign(s, { user: r.user, cars: r.cars, myCarId: r.myCarId, categories: r.categories });
+        Object.assign(s, { user: r.user, cars: r.cars, myCarId: r.myCarId, categories: r.categories, compliance: r.compliance });
         saveSession(s);
         if (!$('screenHome').classList.contains('hidden')) showHome(s);
       } else if (r.error === 'LOGGED_OUT') {
@@ -825,6 +826,60 @@
       }).join('') + '</table></div>';
   }
 
+
+  /* ----- Compliance: employee's own running total (home screen) ----- */
+  function renderMyCompliance(s) {
+    const el = $('myCompliance');
+    const c = s && s.compliance;
+    if (!c || isMgmt(s)) { el.classList.add('hidden'); return; }
+    const what = c.plan === 'Bonus' ? 'Bonus' : 'Raise';
+    const today = new Date().toISOString().slice(0, 10);
+    let html = '<div class="mc-title">Your ' + c.year + ' receipts</div>';
+    if (c.countingFrom > today) {
+      html += '<div class="mc-line">Receipt tracking starts ' + usDate(c.countingFrom) + '.  Enter gas the same day, and other purchases within 15 days.</div>';
+    } else {
+      const left = c.freeTotal - c.freeUsed;
+      html += '<div class="mc-line">Missed: <b>' + c.misses.length + '</b> (' + c.freeTotal + ' free per year, ' + left + ' left)</div>';
+      html += '<div class="mc-line">' + what + ' impact so far: ' + (c.penaltyPct > 0
+        ? '<span class="mc-bad">-' + c.penaltyPct + '%' + (c.penaltyDollars != null ? ' ($' + c.penaltyDollars.toFixed(2) + ')' : '') + '</span>'
+        : '<span class="mc-good">none</span>') + '</div>';
+      if (c.openNow.length) {
+        html += '<div class="mc-line" style="margin-top:8px"><b>Still needed:</b></div><ul>' +
+          c.openNow.slice(0, 6).map(i => '<li>' + usDate(i.date) + ' ' + esc(i.merchant) + ' ' + money(i.amount) + '</li>').join('') +
+          (c.openCount > 6 ? '<li>…and ' + (c.openCount - 6) + ' more</li>' : '') + '</ul>';
+      }
+    }
+    el.innerHTML = html;
+    el.classList.remove('hidden');
+  }
+
+  /* ----- Compliance: management view ----- */
+  async function loadCompliance() {
+    show('screenCompliance');
+    $('compMsg').textContent = 'Loading…';
+    $('compList').innerHTML = '';
+    const r = await mgmtCall('compliance', {}, $('compMsg'));
+    if (!r) return;
+    if (!r.people.length) { $('compMsg').textContent = 'No one has a compliance plan.  Set "Compliance Plan" on the Cardholders tab.'; return; }
+    const p0 = r.people[0];
+    $('compMsg').textContent = p0.year + ', counting card charges from ' + usDate(p0.countingFrom) +
+      ' (Settings → Compliance Start Date).  Gas counts as missed if not entered the same day; other purchases at 30 days, with a warning at 15.  Plan rules are on the Compliance_Plans tab.';
+    $('compList').innerHTML = r.people.map(c => {
+      const imp = c.penaltyPct > 0 ? '-' + c.penaltyPct + '%' + (c.penaltyDollars != null ? ' ($' + c.penaltyDollars.toFixed(2) + ')' : ' (set Plan Base $ for dollars)') : 'none';
+      const rowsHtml = c.misses.map(m => '<tr class="' + (m.free ? '' : 'red') + '"><td>' + usDate(m.date) + '</td><td>' + m.kind +
+          '</td><td>' + esc(m.merchant) + '</td><td class="num">' + money(m.amount) + '</td><td>' + (m.free ? 'Free miss' : '-' + m.pct + '%') + '</td></tr>').join('') +
+        c.warnings.map(w => '<tr class="yellow"><td>' + usDate(w.date) + '</td><td>Other</td><td>' + esc(w.merchant) + '</td><td class="num">' +
+          money(w.amount) + '</td><td>15-day warning' + (w.pct ? ', -' + w.pct + '%' : '') + (w.entered ? ' (entered late)' : '') + '</td></tr>').join('');
+      return '<details class="person"><summary>' + esc(c.name) + ' · ' + c.plan +
+        (c.base != null ? ' ($' + Number(c.base).toLocaleString() + ')' : '') + ' — missed ' + c.misses.length +
+        ', free used ' + c.freeUsed + '/' + c.freeTotal + ', impact ' + imp + '</summary><div class="results">' +
+        '<p class="sub" style="padding:6px 8px">' + c.gasCharges + ' gas and ' + c.otherCharges + ' other charges counted · ' +
+        c.openCount + ' still without a receipt</p>' +
+        (rowsHtml ? '<table class="grid"><tr><th>Date</th><th>Type</th><th>Merchant</th><th class="num">Amount</th><th>Result</th></tr>' + rowsHtml + '</table>'
+                  : '<p class="sub" style="padding:6px 8px">No misses.</p>') + '</div></details>';
+    }).join('');
+  }
+
   /* ----- Import ----- */
   let importRows = null;
 
@@ -960,6 +1015,7 @@
     $('impSource').addEventListener('change', onImportFile);
     $('impFrom').addEventListener('change', onImportFile);
     $('btnDoImport').addEventListener('click', doImport);
+    $('btnCompliance').addEventListener('click', loadCompliance);
     $('screenGas').addEventListener('click', e => {
       if (e.target.dataset.removePump) removePump(e.target.dataset.removePump);
       if (e.target.dataset.act) setTimeout(updatePumpSum, 0);

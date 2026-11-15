@@ -111,3 +111,9 @@ table.grid tr.yellow td:first-child { border-left: 4px solid #e8b100; }
 table.grid a { color: #2e6b30; font-weight: 600; margin-right: 8px; }
 table.grid .sub2 { color: #5b6776; font-size: 13px; }
 .results { background: #fff; border-radius: 10px; padding: 6px; box-shadow: 0 1px 3px rgba(0,0,0,.06); overflow-x: auto; }
+.mycomp { background: #fff; border-radius: 12px; padding: 14px; margin-top: 18px; box-shadow: 0 1px 4px rgba(0,0,0,.06); font-size: 15px; }
+.mycomp .mc-title { font-weight: 700; margin-bottom: 6px; }
+.mycomp .mc-line { margin: 3px 0; }
+.mycomp .mc-bad { color: #8a2a1f; font-weight: 700; }
+.mycomp .mc-good { color: #1f7a4d; font-weight: 700; }
+.mycomp ul { margin: 6px 0 0; padding-left: 18px; }

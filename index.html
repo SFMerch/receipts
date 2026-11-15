@@ -43,8 +43,10 @@
       <button class="secondary" id="btnOpenItems">Open Items</button>
       <button class="secondary" id="btnSearch">Find a Receipt</button>
       <button class="secondary" id="btnImport">Import Card Statement</button>
+      <button class="secondary" id="btnCompliance">Receipt Compliance</button>
     </div>
     <p id="queueInfo" class="queue hidden"></p>
+    <div id="myCompliance" class="mycomp hidden"></div>
     <div id="installTip" class="tip hidden"></div>
     <p class="foot">
       <span id="sessionInfo"></span><br>
@@ -135,6 +137,13 @@
     <p id="impPreview" class="sub"></p>
     <button class="primary small hidden" id="btnDoImport">Import</button>
     <p id="impResult" class="msg"></p>
+  </section>
+
+  <!-- SFM Management: Compliance -->
+  <section id="screenCompliance" class="screen hidden wide">
+    <div class="topline"><h1>Receipt Compliance</h1><button class="change" data-back>&larr; Back</button></div>
+    <p id="compMsg" class="sub"></p>
+    <div id="compList"></div>
   </section>
 
   <input id="cameraInput" type="file" accept="image/*" capture="environment" class="hidden">
