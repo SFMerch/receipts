@@ -262,6 +262,8 @@
    * Readings: AI value with Confirm / Incorrect, or typed value
    * ========================================================= */
   // state: 'none' | 'reading' | 'ai' | 'confirmed' | 'manual'
+  let cur = null;   // the entry being filled in (gas or purchase)
+
   function newField() { return { state: 'none', ai: null, value: '', note: '' }; }
 
   function fmt(field, v) {
@@ -272,8 +274,8 @@
   }
 
   function renderReading(field) {
-    const el = document.querySelector('.reading[data-field="' + field + '"]');
-    const f = gas.fields[field];
+    const el = $(cur.screen).querySelector('.reading[data-field="' + field + '"]');
+    const f = cur.fields[field];
     const label = el.dataset.label;
     if (f.state === 'none') { el.innerHTML = ''; return; }
     if (f.state === 'reading') {
@@ -302,7 +304,7 @@
     const el = e.target.closest('.reading');
     if (!act || !el) return;
     const field = el.dataset.field;
-    const f = gas.fields[field];
+    const f = cur.fields[field];
     if (act === 'confirm') { f.value = f.ai; f.state = 'confirmed'; renderReading(field); }
     if (act === 'incorrect') {
       f.value = ''; f.note = 'Type the correct ' + el.dataset.label.toLowerCase() + '.';
@@ -314,12 +316,12 @@
   function onReadingInput(e) {
     if (e.target.dataset.act !== 'type') return;
     const field = e.target.closest('.reading').dataset.field;
-    gas.fields[field].value = e.target.value.replace(/[$,\s]/g, '');
+    cur.fields[field].value = e.target.value.replace(/[$,\s]/g, '');
   }
 
   function setManual(fields, note) {
     fields.forEach(k => {
-      const f = gas.fields[k];
+      const f = cur.fields[k];
       if (f.state !== 'confirmed') { f.state = 'manual'; f.note = note; }
       renderReading(k);
     });
@@ -327,25 +329,27 @@
 
   async function readWithAI(kind, fields, base64) {
     if (!navigator.onLine) {
-      $('gasNoService').classList.remove('hidden');
+      $(cur.noService).classList.remove('hidden');
       setManual(fields, '');
+      if (kind === 'receipt') renderUnclear();
       return;
     }
-    fields.forEach(k => { gas.fields[k] = newField(); gas.fields[k].state = 'reading'; renderReading(k); });
+    fields.forEach(k => { cur.fields[k] = newField(); cur.fields[k].state = 'reading'; renderReading(k); });
     const s = loadSession();
     let r = null;
     try { r = await api('readPhoto', { token: s && s.token, kind: kind, image: base64 }, 45000); }
     catch (e) { r = null; }
     if (!r || !r.ok) {
+      if (kind === 'receipt') renderUnclear();
       setManual(fields, r && r.error === 'LOGGED_OUT'
         ? 'Please type it in.'
         : "Couldn't read the photo right now.  Please type it in.");
       return;
     }
-    gas.ai[kind] = r.fields;
+    cur.ai[kind] = r.fields;
     fields.forEach(k => {
       const v = r.fields[k];
-      const f = gas.fields[k];
+      const f = cur.fields[k];
       if (v == null || v === '' || isNaN(Number(v))) {
         f.state = 'manual'; f.note = "Couldn't read this clearly.  Please type it in.";
       } else {
@@ -353,6 +357,7 @@
       }
       renderReading(k);
     });
+    if (kind === 'receipt') renderUnclear();
   }
 
   /* =========================================================
@@ -370,7 +375,8 @@
   function startGas() {
     const s = loadSession();
     if (!s) { showLogin(); return; }
-    gas = {
+    cur = gas = {
+      screen: 'screenGas', noService: 'gasNoService', msg: 'gasMsg',
       clientId: uuid(), capturedAt: new Date().toISOString(),
       photos: { pump: null, odometer: null }, ai: { pump: null, odometer: null },
       fields: { total: newField(), gallons: newField(), odometer: newField() }
@@ -385,7 +391,7 @@
     $('gasOtherWrap').classList.add('hidden');
     $('gasNoService').classList.toggle('hidden', navigator.onLine);
     ['pumpThumb', 'odometerThumb'].forEach(id => { $(id).src = ''; $(id).classList.add('hidden'); });
-    document.querySelectorAll('[data-photo]').forEach(b => { b.textContent = 'Take photo'; });
+    $('screenGas').querySelectorAll('[data-photo]').forEach(b => { b.textContent = 'Take photo'; });
     ['total', 'gallons', 'odometer'].forEach(renderReading);
     setMsg($('gasMsg'), '');
     show('screenGas');
@@ -393,23 +399,24 @@
 
   async function onPhotoChosen() {
     const file = $('cameraInput').files[0];
-    if (!file || !gas || !photoTarget) return;
+    if (!file || !cur || !photoTarget) return;
     const kind = photoTarget;
     let b64;
     try { b64 = await shrinkPhoto(file); }
-    catch (e) { setMsg($('gasMsg'), 'That photo could not be opened.  Please try again.'); return; }
-    gas.photos[kind] = b64;
-    gas.ai[kind] = null;
+    catch (e) { setMsg($(cur.msg), 'That photo could not be opened.  Please try again.'); return; }
+    cur.photos[kind] = b64;
+    cur.ai[kind] = null;
     const thumb = $(kind + 'Thumb');
     thumb.src = 'data:image/jpeg;base64,' + b64;
     thumb.classList.remove('hidden');
-    document.querySelector('[data-photo="' + kind + '"]').textContent = 'Retake photo';
-    setMsg($('gasMsg'), '');
-    await readWithAI(kind, kind === 'pump' ? ['total', 'gallons'] : ['odometer'], b64);
+    $(cur.screen).querySelector('[data-photo="' + kind + '"]').textContent = 'Retake photo';
+    setMsg($(cur.msg), '');
+    const fieldsFor = { pump: ['total', 'gallons'], odometer: ['odometer'], receipt: ['total'] };
+    await readWithAI(kind, fieldsFor[kind], b64);
   }
 
   function fieldValue(k) {
-    const f = gas.fields[k];
+    const f = cur.fields[k];
     if (f.state === 'confirmed' || f.state === 'manual') {
       const n = Number(f.value);
       return f.value !== '' && !isNaN(n) && n > 0 ? n : null;
@@ -450,28 +457,198 @@
       enteredOffline: !gas.ai.pump || !gas.ai.odometer
     };
 
-    const btn = $('btnGasSubmit');
+    await saveAndSend('submitGas', data, $('btnGasSubmit'), msg, 'gas entry');
+    gas = null;
+  }
+
+  async function saveAndSend(action, data, btn, msg, what) {
     btn.disabled = true; btn.textContent = 'Saving…';
     try {
-      await Outbox.put({ id: gas.clientId, action: 'submitGas', data: data, savedAt: Date.now() });
+      await Outbox.put({ id: data.clientId, action: action, data: data, savedAt: Date.now() });
     } catch (e) {
       btn.disabled = false; btn.textContent = 'Submit';
-      return setMsg(msg, 'Could not save on this phone.  Please try again.');
+      setMsg(msg, 'Could not save on this phone.  Please try again.');
+      return;
     }
     btn.textContent = 'Sending…';
     await flushOutbox();
-    const left = await updateQueueInfo();
+    const all = await Outbox.all().catch(() => []);
+    const stillHere = all.some(i => i.id === data.clientId);
     btn.disabled = false; btn.textContent = 'Submit';
-    gas = null;
-
-    if (left === 0) {
+    cur = null;
+    if (!stillHere) {
       $('doneTitle').textContent = 'Sent';
-      $('doneText').textContent = 'Thanks!  Your gas receipt was submitted.';
+      $('doneText').textContent = 'Thanks!  Your ' + what + ' was submitted.';
     } else {
       $('doneTitle').textContent = 'Saved on your phone';
-      $('doneText').textContent = 'No service right now.  Your receipt is saved and will send automatically when you have signal.  You can close the app.';
+      $('doneText').textContent = 'No service right now.  Your ' + what + ' is saved and will send automatically when you have signal.  You can close the app.';
     }
     show('screenDone');
+  }
+
+
+  /* =========================================================
+   * Purchase entry
+   * ========================================================= */
+  let pur = null;
+
+  function esc(t) {
+    return String(t == null ? '' : t).replace(/[&<>"']/g, c =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  }
+
+  function purchaseCategories() {
+    const s = loadSession();
+    return ((s && s.categories) || []).filter(c => !/^gas\b/i.test(c));
+  }
+
+  function categorySelect(selected) {
+    return '<option value="">Choose category…</option>' + purchaseCategories().map(c =>
+      '<option' + (c === selected ? ' selected' : '') + '>' + esc(c) + '</option>').join('');
+  }
+
+  function startPurchase() {
+    const s = loadSession();
+    if (!s) { showLogin(); return; }
+    cur = pur = {
+      screen: 'screenPurchase', noService: 'purNoService', msg: 'purMsg',
+      clientId: uuid(), capturedAt: new Date().toISOString(),
+      photos: { receipt: null }, ai: { receipt: null },
+      fields: { total: newField() }, unclear: [], itemNotes: {}, split: false, parts: []
+    };
+    $('purCategory').innerHTML = categorySelect('');
+    $('purNote').value = '';
+    $('purNoteReq').textContent = '(optional)';
+    $('unclearItems').innerHTML = '';
+    $('receiptThumb').src = ''; $('receiptThumb').classList.add('hidden');
+    $('screenPurchase').querySelector('[data-photo]').textContent = 'Take photo';
+    $('purNoService').classList.toggle('hidden', navigator.onLine);
+    setSplit(false);
+    renderReading('total');
+    setMsg($('purMsg'), '');
+    show('screenPurchase');
+  }
+
+  /* Items the AI couldn't identify: ask what each one is (required). */
+  function renderUnclear() {
+    const items = ((pur && pur.ai.receipt && pur.ai.receipt.items) || [])
+      .filter(i => i && i.clear === false && i.description);
+    pur.unclear = items;
+    $('unclearItems').innerHTML = items.map((it, i) =>
+      '<div class="unclear"><div class="q">What is "' + esc(it.description) + '"' +
+      (it.amount != null && !isNaN(Number(it.amount)) ? ' ($' + Number(it.amount).toFixed(2) + ')' : '') +
+      '?</div><input data-unclear="' + i + '" placeholder="e.g. wire cutters" value="' +
+      esc(pur.itemNotes[it.description] || '') + '"></div>').join('');
+    if (!pur.ai.receipt) $('purNoteReq').textContent = "(add one if any item on the receipt isn't obvious)";
+    else $('purNoteReq').textContent = '(optional)';
+  }
+
+  function setSplit(on) {
+    pur.split = on;
+    $('singleCat').classList.toggle('hidden', on);
+    $('splitBox').classList.toggle('hidden', !on);
+    if (on && !pur.parts.length) {
+      pur.parts = [{ amount: '', category: $('purCategory').value, note: '' },
+                   { amount: '', category: '', note: '' }];
+    }
+    if (on) renderParts();
+  }
+
+  function renderParts() {
+    $('partsList').innerHTML = pur.parts.map((p, i) =>
+      '<div class="part" data-part="' + i + '">' +
+      '<div class="part-head">Part ' + (i + 1) +
+      (pur.parts.length > 2 ? '<button class="change" data-remove="' + i + '">Remove</button>' : '') + '</div>' +
+      '<input inputmode="decimal" data-k="amount" placeholder="Amount ($)" value="' + esc(p.amount) + '">' +
+      '<select data-k="category">' + categorySelect(p.category) + '</select>' +
+      '<input data-k="note" placeholder="Note (what is it?)" value="' + esc(p.note) + '">' +
+      '</div>').join('');
+    updateSplitLeft();
+  }
+
+  function purTotal() {
+    const f = pur.fields.total;
+    if (f.state === 'confirmed' || f.state === 'manual') {
+      const n = Number(f.value);
+      return f.value !== '' && !isNaN(n) && n > 0 ? n : null;
+    }
+    return null;
+  }
+
+  function updateSplitLeft() {
+    if (!pur || !pur.split) return;
+    const el = $('splitLeft');
+    const total = purTotal();
+    const sum = pur.parts.reduce((a, p) => a + (Number(p.amount) || 0), 0);
+    if (total == null) { el.textContent = 'Confirm the receipt total first.'; el.className = 'split-left'; return; }
+    const left = Math.round((total - sum) * 100) / 100;
+    if (Math.abs(left) < 0.005) { el.textContent = 'Parts add up to $' + total.toFixed(2) + '  ✓'; el.className = 'split-left good'; }
+    else if (left > 0) { el.textContent = 'Left to assign: $' + left.toFixed(2); el.className = 'split-left off'; }
+    else { el.textContent = 'Parts are $' + (-left).toFixed(2) + ' over the total'; el.className = 'split-left off'; }
+  }
+
+  function onPurchaseInput(e) {
+    const t = e.target;
+    if (t.dataset.unclear != null) {
+      const it = pur.unclear[Number(t.dataset.unclear)];
+      if (it) pur.itemNotes[it.description] = t.value;
+      return;
+    }
+    const partEl = t.closest('.part');
+    if (partEl && t.dataset.k) {
+      pur.parts[Number(partEl.dataset.part)][t.dataset.k] = t.dataset.k === 'amount'
+        ? t.value.replace(/[$,\s]/g, '') : t.value;
+      updateSplitLeft();
+    }
+    if (t.dataset.act === 'type') updateSplitLeft();
+  }
+
+  function onPurchaseClick(e) {
+    const t = e.target;
+    if (t.dataset.remove != null) {
+      pur.parts.splice(Number(t.dataset.remove), 1);
+      renderParts();
+    }
+    if (t.dataset.act) setTimeout(updateSplitLeft, 0);
+  }
+
+  async function submitPurchase() {
+    const msg = $('purMsg');
+    if (!pur.photos.receipt) return setMsg(msg, 'Take a photo of the receipt.');
+    const st = pur.fields.total.state;
+    if (st === 'reading') return setMsg(msg, 'Still reading the photo.  One moment…');
+    if (st === 'ai') return setMsg(msg, 'Tap Confirm or Incorrect for the total.');
+    const total = purTotal();
+    if (total == null) return setMsg(msg, 'Enter the receipt total.');
+
+    const missing = pur.unclear.filter(it => !(pur.itemNotes[it.description] || '').trim());
+    if (missing.length) return setMsg(msg, 'Tell us what each unclear item is (the yellow boxes).');
+
+    let parts;
+    const note = $('purNote').value.trim();
+    if (!pur.split) {
+      const cat = $('purCategory').value;
+      if (!cat) return setMsg(msg, 'Choose a category.');
+      parts = [{ amount: total, category: cat, note: '' }];
+    } else {
+      for (let i = 0; i < pur.parts.length; i++) {
+        const p = pur.parts[i];
+        if (!(Number(p.amount) > 0)) return setMsg(msg, 'Enter an amount for part ' + (i + 1) + '.');
+        if (!p.category) return setMsg(msg, 'Choose a category for part ' + (i + 1) + '.');
+      }
+      const sum = pur.parts.reduce((a, p) => a + Number(p.amount), 0);
+      if (Math.abs(sum - total) > 0.005) return setMsg(msg, 'The parts must add up to the total ($' + total.toFixed(2) + ').');
+      parts = pur.parts.map(p => ({ amount: Number(p.amount), category: p.category, note: p.note.trim() }));
+    }
+
+    const data = {
+      clientId: pur.clientId, capturedAt: pur.capturedAt, total: total,
+      receiptPhoto: pur.photos.receipt, parts: parts, note: note,
+      itemNotes: pur.unclear.map(it => ({ description: it.description, note: (pur.itemNotes[it.description] || '').trim() })),
+      ai: { receipt: pur.ai.receipt }, enteredOffline: !pur.ai.receipt
+    };
+    await saveAndSend('submitPurchase', data, $('btnPurSubmit'), msg, 'purchase receipt');
+    pur = null;
   }
 
   /* =========================================================
@@ -491,7 +668,20 @@
     $('loginPin').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
     $('lnkLogout').addEventListener('click', e => { e.preventDefault(); doLogout(); });
     $('btnGas').addEventListener('click', startGas);
-    $('btnPurchase').addEventListener('click', () => { $('soonTitle').textContent = 'Purchase'; show('screenSoon'); });
+    $('btnPurchase').addEventListener('click', startPurchase);
+    $('screenPurchase').addEventListener('click', onReadingClick);
+    $('screenPurchase').addEventListener('input', onReadingInput);
+    $('screenPurchase').addEventListener('input', onPurchaseInput);
+    $('screenPurchase').addEventListener('click', onPurchaseClick);
+    $('btnSplit').addEventListener('click', () => setSplit(true));
+    $('btnUnsplit').addEventListener('click', () => { pur.parts = []; setSplit(false); });
+    $('btnAddPart').addEventListener('click', () => { pur.parts.push({ amount: '', category: '', note: '' }); renderParts(); });
+    $('btnPurSubmit').addEventListener('click', submitPurchase);
+    ['screenGas', 'screenPurchase'].forEach(id => {
+      const clear = () => setMsg($(id === 'screenGas' ? 'gasMsg' : 'purMsg'), '');
+      $(id).addEventListener('input', clear);
+      $(id).addEventListener('change', clear);
+    });
     document.querySelectorAll('[data-back]').forEach(b => b.addEventListener('click', goHome));
 
     $('gasCar').addEventListener('change', () => {

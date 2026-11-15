@@ -88,11 +88,39 @@
 
   <input id="cameraInput" type="file" accept="image/*" capture="environment" class="hidden">
 
-  <!-- Placeholder for Purchase (built in the next step) -->
-  <section id="screenSoon" class="screen hidden">
-    <h1 id="soonTitle"></h1>
-    <p class="sub">This screen is coming in the next update.</p>
-    <button class="secondary" data-back>Back</button>
+  <!-- Purchase -->
+  <section id="screenPurchase" class="screen hidden">
+    <h1>Purchase</h1>
+    <p id="purNoService" class="warn hidden">No service available.  Please enter the sale total, and add a note if any item on the receipt isn't obvious.  Your photo will send when signal returns.</p>
+
+    <div class="step">
+      <div class="step-title">1.  Receipt</div>
+      <button class="photo-btn" data-photo="receipt">Take photo</button>
+      <img id="receiptThumb" class="thumb hidden" alt="">
+      <div class="reading" data-field="total" data-label="Total" data-money="1"></div>
+      <div id="unclearItems"></div>
+    </div>
+
+    <div class="step" id="singleCat">
+      <div class="step-title">2.  Category</div>
+      <select id="purCategory"></select>
+      <label for="purNote">Note <span class="opt" id="purNoteReq">(optional)</span></label>
+      <input id="purNote" placeholder="What was it for?">
+      <button class="secondary" id="btnSplit">Split into parts</button>
+    </div>
+
+    <div class="step hidden" id="splitBox">
+      <div class="step-title">2.  Split into parts</div>
+      <p class="hint">Use this when one receipt covers different things, like DEF for the truck and tools for merchandising.</p>
+      <div id="partsList"></div>
+      <button class="secondary" id="btnAddPart">+ Add another part</button>
+      <p id="splitLeft" class="split-left"></p>
+      <button class="change" id="btnUnsplit">Don't split</button>
+    </div>
+
+    <p id="purMsg" class="msg"></p>
+    <button id="btnPurSubmit" class="primary">Submit</button>
+    <button class="secondary" data-back>Cancel</button>
   </section>
 </main>
 

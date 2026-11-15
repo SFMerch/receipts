@@ -59,3 +59,29 @@ select {
 .warn { background: #fdecea; border: 1px solid #f5c2bc; color: #8a2a1f; border-radius: 10px; padding: 12px; font-size: 15px; }
 .queue { background: #fff7e0; border: 1px solid #f0d58a; border-radius: 10px; padding: 10px 12px; margin-top: 18px; font-size: 15px; text-align: center; }
 .busy { color: #5b6776; font-size: 15px; margin-top: 10px; }
+.opt { font-weight: 400; color: #5b6776; }
+.opt.req { color: #8a2a1f; font-weight: 600; }
+.unclear { background: #fff7e0; border: 1px solid #f0d58a; border-radius: 10px; padding: 10px 12px; margin-top: 12px; }
+.unclear .q { font-weight: 600; font-size: 15px; margin-bottom: 6px; }
+.unclear input { font-size: 17px; padding: 10px; }
+.part { border-top: 1px solid #e3e8ef; padding-top: 12px; margin-top: 12px; }
+.part:first-child { border-top: 0; margin-top: 4px; padding-top: 0; }
+.part-head { display: flex; justify-content: space-between; align-items: center; font-weight: 700; }
+.part-head .change { font-weight: 600; }
+.part input, .part select { margin-top: 6px; font-size: 17px; padding: 10px; }
+.split-left { font-weight: 700; margin: 12px 0 4px; }
+.split-left.off { color: #8a2a1f; }
+.split-left.good { color: #1f7a4d; }
+.opt { font-weight: 400; color: #5b6776; }
+.opt.req { color: #8a2a1f; font-weight: 600; }
+.unclear { background: #fff7e0; border: 1px solid #f0d58a; border-radius: 10px; padding: 10px 12px; margin-top: 12px; }
+.unclear .q { font-weight: 600; font-size: 15px; margin-bottom: 6px; }
+.unclear input { font-size: 17px; padding: 10px; }
+.part { border-top: 1px solid #e3e8ef; padding-top: 12px; margin-top: 12px; }
+.part:first-child { border-top: 0; margin-top: 4px; padding-top: 0; }
+.part-head { display: flex; justify-content: space-between; align-items: center; font-weight: 700; }
+.part input, .part select { margin-top: 6px; font-size: 17px; padding: 10px; }
+.split-left { font-weight: 700; margin: 12px 0 4px; }
+.split-left.off { color: #8a2a1f; }
+.split-left.good { color: #1f7a4d; }
+button.change { background: none; color: #2e6b30; width: auto; padding: 0; margin: 10px 0 0; font-size: 15px; font-weight: 600; text-decoration: underline; }
