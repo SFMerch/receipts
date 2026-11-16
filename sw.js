@@ -1,5 +1,5 @@
 // Service worker: keeps the app's own files on the phone so it opens with no signal.
-const CACHE = 'sfm-receipts-v11';
+const CACHE = 'sfm-receipts-v12';
 const FILES = [
   './', 'index.html', 'styles.css', 'app.js', 'config.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'

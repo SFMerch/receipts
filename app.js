@@ -422,6 +422,7 @@
 
   async function onPhotoChosen() {
     const file = $('cameraInput').files[0];
+    if (photoTarget === 'catchup') { if (file) cuPhoto(file); return; }
     if (!file || !cur || !photoTarget) return;
     const kind = photoTarget;
     let b64;
@@ -946,6 +947,144 @@
     }).join('');
   }
 
+
+  /* ----- Catch-up entry (old receipts, charge by charge) ----- */
+  const cu = { items: [], idx: -1, data: null, photo: null, ai: null };
+
+  function cuMonths() {
+    const sel = $('cuMonth');
+    if (sel.options.length) return;
+    const y = new Date().getFullYear();
+    sel.add(new Option('All ' + y, ''));
+    ['January','February','March','April','May','June','July','August','September','October','November','December']
+      .forEach((m, i) => sel.add(new Option(m + ' ' + y, y + '-' + ('0' + (i + 1)).slice(-2))));
+  }
+
+  async function openCatchup() {
+    cuMonths();
+    show('screenCatchup');
+    if (!$('cuWho').options.length || $('cuWho').options.length < 2) await cuLoad();
+  }
+
+  async function cuLoad() {
+    $('cuProgress').textContent = 'Loading…';
+    $('cuCard').classList.add('hidden');
+    const r = await mgmtCall('catchupList', { cardholder: $('cuWho').value, month: $('cuMonth').value }, $('cuProgress'));
+    if (!r) return;
+    const who = $('cuWho').value;
+    if ($('cuWho').options.length < 2) {
+      r.cardholders.forEach(n => $('cuWho').add(new Option(n, n)));
+      $('cuWho').value = who;
+    }
+    cu.data = r;
+    cu.items = r.items;
+    $('cuCar').innerHTML = r.cars.map(c => '<option value="' + esc(c.id) + '">' + esc(c.label) + '</option>').join('') +
+      '<option value="__other">Not an SFM vehicle (rental, etc.)</option><option value="">Unknown vehicle</option>';
+    $('cuCategory').innerHTML = r.categories.map(c => '<option>' + esc(c) + '</option>').join('');
+    if (!who) { $('cuProgress').textContent = 'Choose a cardholder to start.'; return; }
+    cu.idx = -1;
+    cuNext(1);
+    if (cu.idx < 0) { cu.idx = cu.items.length; cuRender(); }
+  }
+
+  function cuVisible(i) { return !$('cuOpenOnly').checked || cu.items[i].status === 'Open'; }
+
+  function cuNext(dir) {
+    let i = cu.idx;
+    do { i += dir; } while (i >= 0 && i < cu.items.length && !cuVisible(i));
+    if (i < 0) return;
+    cu.idx = i;
+    cuRender();
+  }
+
+  function cuRender() {
+    const done = cu.items.filter(x => x.status !== 'Open').length;
+    $('cuProgress').textContent = cu.items.length
+      ? done + ' of ' + cu.items.length + ' charges done for ' + $('cuWho').value + ($('cuMonth').value ? ' in this month' : ' this year') + '.'
+      : 'No charges found.';
+    if (cu.idx >= cu.items.length || cu.idx < 0) {
+      $('cuCard').classList.add('hidden');
+      if (cu.items.length) $('cuProgress').textContent += '  All done here.  Pick another month or cardholder.';
+      return;
+    }
+    const it = cu.items[cu.idx];
+    $('cuCard').classList.remove('hidden');
+    cu.photo = null; cu.ai = null;
+    $('cuPos').textContent = 'Charge ' + (cu.idx + 1) + ' of ' + cu.items.length + ' · ' + (it.bankCategory || '');
+    $('cuCharge').innerHTML = '<b>' + usDate(it.date) + '</b> · ' + esc(it.merchant) + ' · <b>' + money(it.amount) + '</b>' +
+      (it.status !== 'Open' ? '<span class="st ' + (it.status === 'Done' ? 'Done' : 'No') + '">' + esc(it.status) + '</span>' : '');
+    document.querySelectorAll('input[name=cuKind]').forEach(r => { r.checked = r.value === it.kind; });
+    $('cuThumb').src = ''; $('cuThumb').classList.add('hidden');
+    $('cuAi').innerHTML = ''; $('cuMsg').textContent = '';
+    $('cuCar').value = cu.data.defaultCarId || '';
+    $('cuOtherCar').value = ''; $('cuOtherCar').classList.add('hidden');
+    $('cuGallons').value = ''; $('cuMileage').value = ''; $('cuNote').value = '';
+    $('cuCategory').value = it.guess;
+    cuKindChanged();
+    const locked = it.status === 'Done';
+    ['btnCuSave', 'btnCuNone', 'btnCuPhoto'].forEach(id => { $(id).disabled = locked; });
+    $('btnCuNone').textContent = it.status === 'No receipt' ? 'Undo "No receipt"' : 'No receipt';
+    $('btnCuNone').disabled = it.status === 'Done';
+  }
+
+  function cuKind() { const r = document.querySelector('input[name=cuKind]:checked'); return r ? r.value : 'Other'; }
+  function cuKindChanged() {
+    $('cuGas').classList.toggle('hidden', cuKind() !== 'Gas');
+    $('cuOther').classList.toggle('hidden', cuKind() === 'Gas');
+  }
+
+  async function cuPhoto(file) {
+    let b64;
+    try { b64 = await shrinkPhoto(file); } catch (e) { $('cuMsg').textContent = 'That image could not be opened.'; return; }
+    cu.photo = b64; cu.ai = null;
+    $('cuThumb').src = 'data:image/jpeg;base64,' + b64; $('cuThumb').classList.remove('hidden');
+    $('cuAi').textContent = 'Reading receipt…';
+    const it = cu.items[cu.idx];
+    const r = await mgmtCall('catchupRead', { image: b64 }, $('cuMsg'));
+    if (!r || !r.fields) { $('cuAi').textContent = "Couldn't read the receipt.  Fill in what you need."; return; }
+    const f = r.fields; cu.ai = f;
+    let line = '';
+    if (f.total != null) line += Math.abs(Number(f.total) - it.amount) < 0.01
+      ? '<span class="ok">Receipt total ' + money(f.total) + ' matches  ✓</span>'
+      : '<span class="bad">Receipt shows ' + money(f.total) + ', card charge is ' + money(it.amount) + '</span>';
+    if (f.unclearItems && f.unclearItems.length) line += '<br><span class="bad">Unclear item(s): ' + esc(f.unclearItems.join(', ')) + ' — add a note</span>';
+    $('cuAi').innerHTML = line || 'Read the receipt, but no total was found.';
+    if (f.gallons != null && !$('cuGallons').value) $('cuGallons').value = f.gallons;
+    if (f.mileage != null && !$('cuMileage').value) $('cuMileage').value = f.mileage;
+    (cuKind() === 'Gas' ? $('cuMileage') : $('cuNote')).focus();
+  }
+
+  async function cuSave() {
+    const it = cu.items[cu.idx];
+    if (!it) return;
+    if (!cu.photo) { $('cuMsg').textContent = 'Add the receipt photo first (or use "No receipt").'; return; }
+    const gas = cuKind() === 'Gas';
+    const carSel = $('cuCar').value;
+    if (gas && carSel === '__other' && !$('cuOtherCar').value.trim()) { $('cuMsg').textContent = 'Describe the vehicle.'; return; }
+    const btn = $('btnCuSave');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    const r = await mgmtCall('catchupSave', { data: {
+      chargeId: it.chargeId, kind: gas ? 'Gas' : 'Other', photo: cu.photo, ai: cu.ai,
+      carId: gas && carSel && carSel !== '__other' ? carSel : '', otherCar: gas && carSel === '__other' ? $('cuOtherCar').value.trim() : '',
+      gallons: gas ? $('cuGallons').value.replace(/[,\s]/g, '') : '', mileage: gas ? $('cuMileage').value.replace(/[,\s]/g, '') : '',
+      category: gas ? '' : $('cuCategory').value, note: gas ? '' : $('cuNote').value.trim() } }, $('cuMsg'));
+    btn.disabled = false; btn.textContent = 'Save & Next';
+    if (!r) return;
+    it.status = 'Done';
+    cuNext(1);
+    if (cu.idx >= 0 && cu.items[cu.idx] === it) { cu.idx = cu.items.length; cuRender(); }
+  }
+
+  async function cuNone() {
+    const it = cu.items[cu.idx];
+    if (!it) return;
+    const undo = it.status === 'No receipt';
+    const r = await mgmtCall('catchupNoReceipt', { chargeId: it.chargeId, undo: undo }, $('cuMsg'));
+    if (!r) return;
+    it.status = undo ? 'Open' : 'No receipt';
+    if (undo) cuRender(); else { cuNext(1); if (cu.items[cu.idx] === it) { cu.idx = cu.items.length; cuRender(); } }
+  }
+
   /* ----- Import ----- */
   let importRows = null;
 
@@ -1083,6 +1222,18 @@
     $('btnDoImport').addEventListener('click', doImport);
     $('btnCompliance').addEventListener('click', loadCompliance);
     $('myCompliance').addEventListener('click', onMissingClick);
+    $('btnCatchup').addEventListener('click', openCatchup);
+    $('cuWho').addEventListener('change', cuLoad);
+    $('cuMonth').addEventListener('change', cuLoad);
+    $('cuOpenOnly').addEventListener('change', () => { cu.idx = -1; cuNext(1); if (cu.idx < 0) { cu.idx = cu.items.length; cuRender(); } });
+    document.querySelectorAll('input[name=cuKind]').forEach(r => r.addEventListener('change', cuKindChanged));
+    $('cuCar').addEventListener('change', () => $('cuOtherCar').classList.toggle('hidden', $('cuCar').value !== '__other'));
+    $('btnCuPhoto').addEventListener('click', () => takePhoto('catchup'));
+    $('btnCuSave').addEventListener('click', cuSave);
+    $('btnCuNone').addEventListener('click', cuNone);
+    $('btnCuSkip').addEventListener('click', () => { const i = cu.idx; cuNext(1); if (cu.idx === i) { cu.idx = cu.items.length; cuRender(); } });
+    $('btnCuPrev').addEventListener('click', () => cuNext(-1));
+    ['cuGallons', 'cuMileage', 'cuNote'].forEach(id => $(id).addEventListener('keydown', e => { if (e.key === 'Enter') cuSave(); }));
     $('screenGas').addEventListener('click', e => {
       if (e.target.dataset.removePump) removePump(e.target.dataset.removePump);
       if (e.target.dataset.act) setTimeout(updatePumpSum, 0);

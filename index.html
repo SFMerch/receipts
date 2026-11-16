@@ -44,6 +44,7 @@
       <button class="secondary" id="btnSearch">Find a Receipt</button>
       <button class="secondary" id="btnImport">Import Card Statement</button>
       <button class="secondary" id="btnCompliance">Receipt Compliance</button>
+      <button class="secondary" id="btnCatchup">Catch-up Entry (old receipts)</button>
     </div>
     <p id="queueInfo" class="queue hidden"></p>
     <div id="myCompliance" class="mycomp hidden"></div>
@@ -149,6 +150,47 @@
     <div class="topline"><h1>Receipt Compliance</h1><button class="change" data-back>&larr; Back</button></div>
     <p id="compMsg" class="sub"></p>
     <div id="compList"></div>
+  </section>
+
+  <!-- SFM Management: Catch-up entry -->
+  <section id="screenCatchup" class="screen hidden wide">
+    <div class="topline"><h1>Catch-up Entry</h1><button class="change" data-back>&larr; Back</button></div>
+    <div class="toolbar">
+      <select id="cuWho"><option value="">Choose cardholder…</option></select>
+      <select id="cuMonth"></select>
+      <label class="inl"><input type="checkbox" id="cuOpenOnly" checked style="width:auto"> Only charges still needing a receipt</label>
+    </div>
+    <p id="cuProgress" class="sub"></p>
+    <div id="cuCard" class="cu-card hidden">
+      <div class="cu-pos" id="cuPos"></div>
+      <div class="cu-charge" id="cuCharge"></div>
+      <div class="cu-kind">
+        <label class="inl"><input type="radio" name="cuKind" value="Gas" style="width:auto"> Gas</label>
+        <label class="inl"><input type="radio" name="cuKind" value="Other" style="width:auto"> Purchase</label>
+      </div>
+      <button class="photo-btn" id="btnCuPhoto">Photo / scan of receipt</button>
+      <img id="cuThumb" class="thumb hidden" alt="">
+      <p id="cuAi" class="cu-ai"></p>
+      <div id="cuGas" class="cu-fields">
+        <label>Vehicle</label><select id="cuCar"></select>
+        <input id="cuOtherCar" class="hidden" placeholder="Describe the vehicle (e.g. Avis rental)">
+        <div class="cu-row">
+          <div><label>Gallons</label><input id="cuGallons" inputmode="decimal"></div>
+          <div><label>Mileage (written on receipt)</label><input id="cuMileage" inputmode="numeric"></div>
+        </div>
+      </div>
+      <div id="cuOther" class="cu-fields">
+        <label>Category</label><select id="cuCategory"></select>
+        <label>Note</label><input id="cuNote" placeholder="What was it? (needed if the receipt isn't obvious)">
+      </div>
+      <p id="cuMsg" class="msg"></p>
+      <div class="cu-actions">
+        <button class="primary small" id="btnCuSave">Save &amp; Next</button>
+        <button class="secondary small" id="btnCuNone">No receipt</button>
+        <button class="change" id="btnCuSkip">Skip</button>
+        <button class="change" id="btnCuPrev">&larr; Previous</button>
+      </div>
+    </div>
   </section>
 
   <input id="cameraInput" type="file" accept="image/*" capture="environment" class="hidden">
