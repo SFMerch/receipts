@@ -1085,6 +1085,34 @@
     if (undo) cuRender(); else { cuNext(1); if (cu.items[cu.idx] === it) { cu.idx = cu.items.length; cuRender(); } }
   }
 
+
+  /* ----- Vehicles & MPG ----- */
+  async function loadVehicles() {
+    const sel = $('vehYear');
+    if (!sel.options.length) { const y = new Date().getFullYear(); [y, y - 1].forEach(v => sel.add(new Option(String(v), String(v)))); sel.add(new Option('All years', '')); }
+    show('screenVehicles');
+    $('vehMsg').textContent = 'Loading…'; $('vehList').innerHTML = '';
+    const r = await mgmtCall('vehicles', { year: sel.value }, $('vehMsg'));
+    if (!r) return;
+    $('vehMsg').textContent = 'MPG is figured between fills that have mileage; fills without mileage are covered by the next reading.  ' +
+      'Flags: below ' + r.lowPct + '% of expected MPG (more gas than the miles explain) or above ' + r.highPct + '% (a fill may be missing).  ' +
+      'Expected MPG is on the Cars tab.';
+    $('vehList').innerHTML = r.vehicles.map(v => {
+      const head = esc(v.label) + (v.driver ? ' · ' + esc(v.driver) : '') + ' — ' + v.fillCount + ' fills, ' + v.gallons + ' gal, ' +
+        money(v.spent) + (v.mpg ? ', ' + v.mpg + ' MPG' : '') + (v.expected ? ' (expected ~' + v.expected + ')' : '') +
+        (v.flagCount ? '<span class="badge red">' + v.flagCount + ' flag' + (v.flagCount > 1 ? 's' : '') + '</span>' : '') +
+        (v.noMileage ? '<span class="badge yellow">' + v.noMileage + ' no mileage</span>' : '');
+      const rows = v.fills.map(f => '<tr class="' + (f.flags.length ? 'red' : (f.odometer == null ? 'yellow' : '')) + '"><td>' + usDate(f.date) +
+        '</td><td>' + esc(f.cardholder) + '</td><td class="num">' + (f.gallons != null ? f.gallons : '') + '</td><td class="num">' +
+        (f.odometer != null ? Number(f.odometer).toLocaleString() : '') + '</td><td class="num">' + (f.miles != null ? f.miles.toLocaleString() : '') +
+        '</td><td class="num">' + (f.mpg != null ? f.mpg : '') + '</td><td>' + esc(f.flags.join('; ') || f.note || '') +
+        '</td><td>' + links(f) + '</td></tr>').join('');
+      return '<details class="person"' + (v.flagCount ? ' open' : '') + '><summary>' + head + '</summary><div class="results">' +
+        (rows ? '<table class="grid"><tr><th>Date</th><th>Driver</th><th class="num">Gallons</th><th class="num">Mileage</th><th class="num">Miles</th><th class="num">MPG</th><th>Notes</th><th>Photos</th></tr>' + rows + '</table>'
+              : '<p class="sub" style="padding:6px 8px">No fill-ups yet.</p>') + '</div></details>';
+    }).join('');
+  }
+
   /* ----- Import ----- */
   let importRows = null;
 
@@ -1223,6 +1251,9 @@
     $('btnCompliance').addEventListener('click', loadCompliance);
     $('myCompliance').addEventListener('click', onMissingClick);
     $('btnCatchup').addEventListener('click', openCatchup);
+    $('btnVehicles').addEventListener('click', loadVehicles);
+    $('btnVehRefresh').addEventListener('click', loadVehicles);
+    $('vehYear').addEventListener('change', loadVehicles);
     $('cuWho').addEventListener('change', cuLoad);
     $('cuMonth').addEventListener('change', cuLoad);
     $('cuOpenOnly').addEventListener('change', () => { cu.idx = -1; cuNext(1); if (cu.idx < 0) { cu.idx = cu.items.length; cuRender(); } });

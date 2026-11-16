@@ -44,6 +44,7 @@
       <button class="secondary" id="btnSearch">Find a Receipt</button>
       <button class="secondary" id="btnImport">Import Card Statement</button>
       <button class="secondary" id="btnCompliance">Receipt Compliance</button>
+      <button class="secondary" id="btnVehicles">Vehicles &amp; MPG</button>
       <button class="secondary" id="btnCatchup">Catch-up Entry (old receipts)</button>
     </div>
     <p id="queueInfo" class="queue hidden"></p>
@@ -191,6 +192,14 @@
         <button class="change" id="btnCuPrev">&larr; Previous</button>
       </div>
     </div>
+  </section>
+
+  <!-- SFM Management: Vehicles -->
+  <section id="screenVehicles" class="screen hidden wide">
+    <div class="topline"><h1>Vehicles &amp; MPG</h1><button class="change" data-back>&larr; Back</button></div>
+    <div class="toolbar"><select id="vehYear"></select><button class="secondary small" id="btnVehRefresh">Refresh</button></div>
+    <p id="vehMsg" class="sub"></p>
+    <div id="vehList"></div>
   </section>
 
   <input id="cameraInput" type="file" accept="image/*" capture="environment" class="hidden">
