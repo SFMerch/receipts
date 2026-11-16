@@ -185,7 +185,7 @@
       const r = await api('login', { name: name, pin: pin });
       if (!r.ok) { setMsg(msg, r.error || 'Sign-in failed.'); return; }
       const s = { token: r.token, expires: r.expires, user: r.user, cars: r.cars,
-                  myCarId: r.myCarId, categories: r.categories, compliance: r.compliance };
+                  myCarId: r.myCarId, categories: r.categories, compliance: r.compliance, missing: r.missing };
       saveSession(s);
       try { localStorage.setItem('sfm_last_name', s.user.name); } catch (e) { /* ignore */ }
       showHome(s);
@@ -218,7 +218,7 @@
     try {
       const r = await api('bootstrap', { token: s.token });
       if (r.ok) {
-        Object.assign(s, { user: r.user, cars: r.cars, myCarId: r.myCarId, categories: r.categories, compliance: r.compliance });
+        Object.assign(s, { user: r.user, cars: r.cars, myCarId: r.myCarId, categories: r.categories, compliance: r.compliance, missing: r.missing });
         saveSession(s);
         if (!$('screenHome').classList.contains('hidden')) showHome(s);
       } else if (r.error === 'LOGGED_OUT') {
@@ -377,7 +377,13 @@
     });
   }
 
-  function startGas() {
+  function linkedText(item) {
+    return 'Entering a missed ' + (item.kind === 'Gas' ? 'fill-up' : 'purchase') + ':  <b>' + usDate(item.date) + '</b> ' +
+      esc(item.merchant) + ' <b>' + money(item.amount) + '</b>';
+  }
+
+  function startGas(item) {
+    if (item && item.target) item = null;   // called from a button click
     const s = loadSession();
     if (!s) { showLogin(); return; }
     cur = gas = {
@@ -396,6 +402,14 @@
     gas.nextPump = 1;
     $('extraPumps').innerHTML = '';
     $('pumpSum').textContent = '';
+    gas.charge = item || null;
+    $('gasLinked').innerHTML = item ? linkedText(item) : '';
+    $('gasLinked').classList.toggle('hidden', !item);
+    $('odoTitle').textContent = item ? '2.  Odometer (if you have it)' : '2.  Odometer';
+    $('odoManualWrap').classList.toggle('hidden', !item);
+    $('gasOdoManual').value = '';
+    $('btnAddPump').classList.toggle('hidden', !!item);
+    $('pumpHint').classList.toggle('hidden', !!item);
     $('gasOtherDesc').value = '';
     $('gasOtherWrap').classList.add('hidden');
     $('gasNoService').classList.toggle('hidden', navigator.onLine);
@@ -448,7 +462,7 @@
         ? 'Take a photo of pump receipt ' + (i + 1) + ' (or remove it).'
         : 'Take a photo of the pump display or receipt.');
     }
-    if (!gas.photos.odometer) return setMsg(msg, 'Take a photo of the odometer.');
+    if (!gas.photos.odometer && !gas.charge) return setMsg(msg, 'Take a photo of the odometer.');
 
     const allFields = Object.keys(gas.fields);
     if (allFields.some(k => gas.fields[k].state === 'reading')) return setMsg(msg, 'Still reading the photo.  One moment…');
@@ -463,8 +477,13 @@
       if (g == null) return setMsg(msg, 'Enter the gallons' + which + '.');
       pumps.push({ total: t, gallons: g, photo: gas.photos[keys[i]], ai: gas.ai[keys[i]] });
     }
-    const odometer = fieldValue('odometer');
-    if (odometer == null || Math.round(odometer) !== odometer) return setMsg(msg, 'Enter the odometer in whole miles.');
+    let odometer = fieldValue('odometer');
+    if (gas.charge && !gas.photos.odometer) {
+      const typed = $('gasOdoManual').value.replace(/[,\s]/g, '');
+      odometer = typed === '' ? null : Number(typed);
+      if (odometer != null && (isNaN(odometer) || odometer <= 0 || Math.round(odometer) !== odometer))
+        return setMsg(msg, 'Enter the mileage in whole miles, or leave it blank.');
+    } else if (odometer == null || Math.round(odometer) !== odometer) return setMsg(msg, 'Enter the odometer in whole miles.');
 
     const total = Math.round(pumps.reduce((a, p) => a + p.total, 0) * 100) / 100;
     const gallons = Math.round(pumps.reduce((a, p) => a + p.gallons, 0) * 1000) / 1000;
@@ -479,8 +498,10 @@
       total: total, gallons: gallons, odometer: odometer,
       pumps: pumps, pumpPhoto: pumps[0].photo, odometerPhoto: gas.photos.odometer,
       ai: { pump: pumps[0].ai, odometer: gas.ai.odometer },
-      enteredOffline: pumps.some(p => !p.ai) || !gas.ai.odometer
+      enteredOffline: pumps.some(p => !p.ai) || (!!gas.photos.odometer && !gas.ai.odometer),
+      chargeId: gas.charge ? gas.charge.chargeId : ''
     };
+    if (gas.charge) dropMissing(gas.charge.chargeId);
 
     await saveAndSend('submitGas', data, $('btnGasSubmit'), msg, 'gas entry');
     gas = null;
@@ -502,6 +523,7 @@
     btn.disabled = false; btn.textContent = 'Submit';
     cur = null;
     if (!stillHere) {
+      refreshData();
       $('doneTitle').textContent = 'Sent';
       $('doneText').textContent = 'Thanks!  Your ' + what + ' was submitted.';
     } else {
@@ -586,7 +608,8 @@
       '<option' + (c === selected ? ' selected' : '') + '>' + esc(c) + '</option>').join('');
   }
 
-  function startPurchase() {
+  function startPurchase(item) {
+    if (item && item.target) item = null;   // called from a button click
     const s = loadSession();
     if (!s) { showLogin(); return; }
     cur = pur = {
@@ -595,6 +618,9 @@
       photos: { receipt: null }, ai: { receipt: null },
       fields: { total: newField() }, unclear: [], itemNotes: {}, split: false, parts: []
     };
+    pur.charge = item || null;
+    $('purLinked').innerHTML = item ? linkedText(item) : '';
+    $('purLinked').classList.toggle('hidden', !item);
     $('purCategory').innerHTML = categorySelect('');
     $('purNote').value = '';
     $('purNoteReq').textContent = '(optional)';
@@ -724,8 +750,10 @@
       clientId: pur.clientId, capturedAt: pur.capturedAt, total: total,
       receiptPhoto: pur.photos.receipt, parts: parts, note: note,
       itemNotes: pur.unclear.map(it => ({ description: it.description, note: (pur.itemNotes[it.description] || '').trim() })),
-      ai: { receipt: pur.ai.receipt }, enteredOffline: !pur.ai.receipt
+      ai: { receipt: pur.ai.receipt }, enteredOffline: !pur.ai.receipt,
+      chargeId: pur.charge ? pur.charge.chargeId : ''
     };
+    if (pur.charge) dropMissing(pur.charge.chargeId);
     await saveAndSend('submitPurchase', data, $('btnPurSubmit'), msg, 'purchase receipt');
     pur = null;
   }
@@ -828,29 +856,67 @@
 
 
   /* ----- Compliance: employee's own running total (home screen) ----- */
+  function longDate(d) {
+    const m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return d || '';
+    return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][Number(m[2]) - 1] + ' ' + m[3] + ', ' + m[1];
+  }
+
+  let showAllMissing = false;
+
   function renderMyCompliance(s) {
     const el = $('myCompliance');
-    const c = s && s.compliance;
-    if (!c || isMgmt(s)) { el.classList.add('hidden'); return; }
-    const what = c.plan === 'Bonus' ? 'Bonus' : 'Raise';
+    if (!s || isMgmt(s) || (!s.compliance && !s.missing)) { el.classList.add('hidden'); return; }
+    const c = s.compliance, m = s.missing || { items: [], count: 0, startDate: '' };
+    const start = (c && c.countingFrom) || m.startDate;
     const today = new Date().toISOString().slice(0, 10);
-    let html = '<div class="mc-title">Your ' + c.year + ' receipts</div>';
-    if (c.countingFrom > today) {
-      html += '<div class="mc-line">Receipt tracking starts ' + usDate(c.countingFrom) + '.  Enter gas the same day, and other purchases within 15 days.</div>';
-    } else {
+    const yr = start && start > today ? start.slice(0, 4) : ((c && c.year) || today.slice(0, 4));
+    let html = '<div class="mc-title">Your ' + yr + ' Receipts</div>';
+    html += '<div class="policy">' + (start ? 'Receipt tracking begins ' + longDate(start) + '.  ' : '') +
+      'Gas purchases must be entered at transaction.  Other purchases must be entered same day.  ' +
+      'Best practice is to enter all immediately following transaction.</div>';
+    if (c && start && start <= today) {
       const left = c.freeTotal - c.freeUsed;
+      const what = c.plan === 'Bonus' ? 'Bonus' : 'Raise';
       html += '<div class="mc-line">Missed: <b>' + c.misses.length + '</b> (' + c.freeTotal + ' free per year, ' + left + ' left)</div>';
       html += '<div class="mc-line">' + what + ' impact so far: ' + (c.penaltyPct > 0
         ? '<span class="mc-bad">-' + c.penaltyPct + '%' + (c.penaltyDollars != null ? ' ($' + c.penaltyDollars.toFixed(2) + ')' : '') + '</span>'
         : '<span class="mc-good">none</span>') + '</div>';
-      if (c.openNow.length) {
-        html += '<div class="mc-line" style="margin-top:8px"><b>Still needed:</b></div><ul>' +
-          c.openNow.slice(0, 6).map(i => '<li>' + usDate(i.date) + ' ' + esc(i.merchant) + ' ' + money(i.amount) + '</li>').join('') +
-          (c.openCount > 6 ? '<li>…and ' + (c.openCount - 6) + ' more</li>' : '') + '</ul>';
-      }
+    }
+    const items = m.items || [];
+    if (items.length) {
+      const shown = showAllMissing ? items : items.slice(0, 8);
+      html += '<div class="mc-line" style="margin-top:10px"><b>Still needed (' + m.count + '):</b>  Tap one to enter it.</div>' +
+        shown.map(i => '<button class="missing-btn" data-charge="' + esc(i.chargeId) + '"><span><b>' + usDate(i.date) +
+          '</b> ' + esc(i.merchant) + ' <b>' + money(i.amount) + '</b><br><span class="k">' + (i.kind === 'Gas' ? 'Gas' : 'Purchase') +
+          '</span></span><span class="go">Enter &rsaquo;</span></button>').join('') +
+        (items.length > shown.length ? '<button class="change" id="btnMoreMissing">Show all ' + items.length + '</button>' : '') +
+        (m.count > items.length ? '<div class="k" style="margin-top:6px">Showing the newest ' + items.length + '.</div>' : '');
+    } else if (start && start <= today) {
+      html += '<div class="mc-line mc-good" style="margin-top:8px">Nothing missing.  Nice work!</div>';
     }
     el.innerHTML = html;
     el.classList.remove('hidden');
+  }
+
+  function onMissingClick(e) {
+    if (e.target.id === 'btnMoreMissing') { showAllMissing = true; renderMyCompliance(loadSession()); return; }
+    const btn = e.target.closest('[data-charge]');
+    if (!btn) return;
+    const s = loadSession();
+    const item = ((s && s.missing && s.missing.items) || []).find(i => i.chargeId === btn.dataset.charge);
+    if (!item) return;
+    if (item.kind === 'Gas') startGas(item); else startPurchase(item);
+  }
+
+  /* Remove an item from the phone's missing list right after it's entered. */
+  function dropMissing(chargeId) {
+    const s = loadSession();
+    if (!s || !s.missing || !chargeId) return;
+    const before = s.missing.items.length;
+    s.missing.items = s.missing.items.filter(i => i.chargeId !== chargeId);
+    if (s.missing.items.length < before) s.missing.count = Math.max(0, s.missing.count - 1);
+    saveSession(s);
   }
 
   /* ----- Compliance: management view ----- */
@@ -1016,6 +1082,7 @@
     $('impFrom').addEventListener('change', onImportFile);
     $('btnDoImport').addEventListener('click', doImport);
     $('btnCompliance').addEventListener('click', loadCompliance);
+    $('myCompliance').addEventListener('click', onMissingClick);
     $('screenGas').addEventListener('click', e => {
       if (e.target.dataset.removePump) removePump(e.target.dataset.removePump);
       if (e.target.dataset.act) setTimeout(updatePumpSum, 0);

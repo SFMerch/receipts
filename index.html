@@ -57,6 +57,7 @@
   <!-- Gas -->
   <section id="screenGas" class="screen hidden">
     <h1>Gas</h1>
+    <p id="gasLinked" class="linked hidden"></p>
     <p id="gasNoService" class="warn hidden">No service available.  Please enter the sale total, gallons and odometer below.  Your photos will send when signal returns.</p>
 
     <label for="gasCar">Vehicle</label>
@@ -76,11 +77,15 @@
       <div id="extraPumps"></div>
       <p id="pumpSum" class="split-left"></p>
       <button class="change" id="btnAddPump">+ Add another pump receipt</button>
-      <p class="hint">Pump stopped at its limit?  Add each pump receipt here, with one odometer photo below.</p>
+      <p class="hint" id="pumpHint">Pump stopped at its limit?  Add each pump receipt here, with one odometer photo below.</p>
     </div>
 
     <div class="step">
-      <div class="step-title">2.  Odometer</div>
+      <div class="step-title" id="odoTitle">2.  Odometer</div>
+      <div id="odoManualWrap" class="hidden">
+        <p class="hint">For a past fill-up, the odometer has changed.  If you wrote down the mileage, type it here.  Otherwise leave it blank.</p>
+        <input id="gasOdoManual" inputmode="numeric" placeholder="Mileage at that fill-up (optional)">
+      </div>
       <button class="photo-btn" data-photo="odometer">Take photo</button>
       <img id="odometerThumb" class="thumb hidden" alt="">
       <div class="reading" data-field="odometer" data-label="Odometer"></div>
@@ -151,6 +156,7 @@
   <!-- Purchase -->
   <section id="screenPurchase" class="screen hidden">
     <h1>Purchase</h1>
+    <p id="purLinked" class="linked hidden"></p>
     <p id="purNoService" class="warn hidden">No service available.  Please enter the sale total, and add a note if any item on the receipt isn't obvious.  Your photo will send when signal returns.</p>
 
     <div class="step">
