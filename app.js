@@ -765,7 +765,10 @@
    * ========================================================= */
   function isMgmt(s) { return s && s.user && (s.user.role === 'Owner' || s.user.role === 'Accountant'); }
 
-  function money(v) { return v == null || v === '' ? '' : (Number(v) < 0 ? '-$' : '$') + Math.abs(Number(v)).toFixed(2); }
+  function money(v) {
+    return v == null || v === '' ? '' : (Number(v) < 0 ? '-$' : '$') +
+      Math.abs(Number(v)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
   function usDate(d) { const m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[2] + '/' + m[3] + '/' + m[1] : (d || ''); }
   function links(r) {
     return (r.receiptPhoto ? '<a href="' + esc(r.receiptPhoto) + '" target="_blank" rel="noopener">Receipt</a>' : '') +
@@ -1113,6 +1116,53 @@
     }).join('');
   }
 
+
+  /* ----- Year-End Summary ----- */
+  let yeData = null;
+
+  async function loadYearEnd() {
+    const sel = $('yeYear');
+    if (!sel.options.length) { const y = new Date().getFullYear(); [y, y - 1, y + 1].forEach(v => sel.add(new Option(String(v), String(v)))); }
+    show('screenYearEnd');
+    $('yeMsg').textContent = 'Loading…'; $('yeTable').innerHTML = '';
+    const r = await mgmtCall('yearEnd', { year: sel.value }, $('yeMsg'));
+    if (!r) return;
+    yeData = r;
+    ['ct', 'ma', 'ny'].forEach(k => { $('ye' + k.toUpperCase()).value = r.revenue[k] ? r.revenue[k] : ''; });
+    const pc = x => (x * 100).toFixed(1) + '%';
+    const p1 = r.percents.SFM1, p6 = r.percents.SFM6;
+    $('yeMsg').innerHTML = 'Card charges ' + r.year + ': <b>' + money(r.chargeTotal) + '</b> (ties to the imported statements).  ' +
+      (p1 ? 'SFM1 split: CT ' + pc(p1.CT) + ', MA ' + pc(p1.MA) + ', NY ' + pc(p1.NY) + '.  SFM6 (trucking) split: CT ' + pc(p6.CT) + ', MA ' + pc(p6.MA) + '.'
+          : 'Enter the full-year commission revenue for each state to split the SFM1 and SFM6 accounts.') +
+      (r.uncategorizedCount ? '<br><span class="mc-bad">' + r.uncategorizedCount + ' charges (' + money(r.uncategorized) + ') have no receipt or category yet; they\'re listed as Uncategorized.</span>' : '');
+    const rows = r.rows.concat(r.uncategorizedCount ? [{ account: 'Uncategorized (no receipt yet)', total: r.uncategorized, uncat: true }] : []);
+    $('yeTable').innerHTML = '<div class="results"><table class="grid"><tr><th>QuickBooks account</th><th class="num">Total</th><th class="num">CT</th><th class="num">MA</th><th class="num">NY</th></tr>' +
+      rows.map(x => '<tr class="' + (x.uncat ? 'red' : '') + '"><td>' + esc(x.account) + (x.group && !x.split ? ' <span class="sub2">(enter revenue to split)</span>' : '') +
+        '</td><td class="num">' + money(x.total) + '</td><td class="num">' + (x.split ? money(x.split.CT) : '') + '</td><td class="num">' +
+        (x.split ? money(x.split.MA) : '') + '</td><td class="num">' + (x.split && x.split.NY != null ? money(x.split.NY) : '') + '</td></tr>').join('') +
+      '<tr><td><b>Total</b></td><td class="num"><b>' + money(rows.reduce((a, x) => a + x.total, 0)) + '</b></td><td></td><td></td><td></td></tr></table></div>';
+  }
+
+  async function saveYearEnd() {
+    const v = id => $(id).value.replace(/[$,\s]/g, '');
+    $('yeMsg').textContent = 'Saving…';
+    const r = await mgmtCall('saveRevenue', { year: $('yeYear').value, ct: v('yeCT'), ma: v('yeMA'), ny: v('yeNY') }, $('yeMsg'));
+    if (r) loadYearEnd();
+  }
+
+  function yearEndCsv() {
+    if (!yeData) return;
+    const q = t => '"' + String(t).replace(/"/g, '""') + '"';
+    const lines = [['QuickBooks account', 'Total', 'CT', 'MA', 'NY'].map(q).join(',')];
+    yeData.rows.forEach(x => lines.push([q(x.account), x.total.toFixed(2), x.split ? x.split.CT.toFixed(2) : '',
+      x.split ? x.split.MA.toFixed(2) : '', x.split && x.split.NY != null ? x.split.NY.toFixed(2) : ''].join(',')));
+    if (yeData.uncategorizedCount) lines.push([q('Uncategorized (no receipt yet)'), yeData.uncategorized.toFixed(2), '', '', ''].join(','));
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([lines.join('\r\n')], { type: 'text/csv' }));
+    a.download = 'SFM card expenses ' + yeData.year + '.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+
   /* ----- Import ----- */
   let importRows = null;
 
@@ -1252,6 +1302,10 @@
     $('myCompliance').addEventListener('click', onMissingClick);
     $('btnCatchup').addEventListener('click', openCatchup);
     $('btnVehicles').addEventListener('click', loadVehicles);
+    $('btnYearEnd').addEventListener('click', loadYearEnd);
+    $('yeYear').addEventListener('change', loadYearEnd);
+    $('btnYeSave').addEventListener('click', saveYearEnd);
+    $('btnYeCsv').addEventListener('click', yearEndCsv);
     $('btnVehRefresh').addEventListener('click', loadVehicles);
     $('vehYear').addEventListener('change', loadVehicles);
     $('cuWho').addEventListener('change', cuLoad);

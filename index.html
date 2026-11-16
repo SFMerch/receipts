@@ -45,6 +45,7 @@
       <button class="secondary" id="btnImport">Import Card Statement</button>
       <button class="secondary" id="btnCompliance">Receipt Compliance</button>
       <button class="secondary" id="btnVehicles">Vehicles &amp; MPG</button>
+      <button class="secondary" id="btnYearEnd">Year-End Summary</button>
       <button class="secondary" id="btnCatchup">Catch-up Entry (old receipts)</button>
     </div>
     <p id="queueInfo" class="queue hidden"></p>
@@ -200,6 +201,21 @@
     <div class="toolbar"><select id="vehYear"></select><button class="secondary small" id="btnVehRefresh">Refresh</button></div>
     <p id="vehMsg" class="sub"></p>
     <div id="vehList"></div>
+  </section>
+
+  <!-- SFM Management: Year-end -->
+  <section id="screenYearEnd" class="screen hidden wide">
+    <div class="topline"><h1>Year-End Summary</h1><button class="change" data-back>&larr; Back</button></div>
+    <div class="toolbar">
+      <select id="yeYear"></select>
+      <label class="inl">CT revenue <input id="yeCT" inputmode="decimal" style="width:130px"></label>
+      <label class="inl">MA revenue <input id="yeMA" inputmode="decimal" style="width:130px"></label>
+      <label class="inl">NY revenue <input id="yeNY" inputmode="decimal" style="width:130px"></label>
+      <button class="primary small" id="btnYeSave">Save &amp; recalculate</button>
+      <button class="secondary small" id="btnYeCsv">Download CSV</button>
+    </div>
+    <p id="yeMsg" class="sub"></p>
+    <div id="yeTable"></div>
   </section>
 
   <input id="cameraInput" type="file" accept="image/*" capture="environment" class="hidden">
